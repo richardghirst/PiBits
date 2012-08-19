@@ -20,7 +20,7 @@ you want in units of 10us.  So, if you want to set servo 3 to a pulse width of
 
 echo 3=120 > /dev/servoblaster
 
-120 is in units os 10us, so that is 1200us, or 1.2ms.
+120 is in units of 10us, so that is 1200us, or 1.2ms.
 
 When the driver is first loaded the GPIO pins are configure to be outputs, and
 their pulse widths are set to 0.  This is so that servos don't jump to some
