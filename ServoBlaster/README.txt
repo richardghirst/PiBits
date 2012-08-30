@@ -77,6 +77,42 @@ take the 5 volts for it from the header pins on the Pi, but I find that doing
 anything non-trivial with four servos connected pulls the 5 volts down far
 enough to crash the Pi!
 
+If you wish to compile the module yourself, the approach I took was to run
+rpi-update to get the latest kernel from github, then follow the instructions
+on the wiki (http://elinux.org/RPi_Kernel_Compilation) to compile the kernel,
+then edit the servoblaster Makefile to point at your kernel tree, then build
+servoblaster.
+
+NOTE: There is some doubt over how to configure the PWM clock at present.  For
+me the clock is 600KHz, which leads to a tick lenght of 10us.  However at least
+one person has reported that the pulses are out by about a factor of about 8,
+and so are repeated every 2.5ms rather than every 20ms.  To work round this I
+have added two module parameters:
+
+tick_scale defaults to 6, which should be a divisor of 600KHz, which should
+give a tick of 10us.  You set the pulse width in ticks (echo 2=27 >
+/dev/panalyzer to set 27 ticks).
+
+cycle_ticks is the cycle time in ticks, and defaults to 2000 to give 20ms if
+one tick is 10us.  cycle_ticks should be a multiple of 8.  The max pulse width
+you can specify by writing to /dev/servoblaster is (cycle_ticks/8 - 1), so for
+the default parameters it is 249, or 2.49ms.
+
+For example:
+
+sudo insmod ./servoblaster.ko tick_scale=48
+
+should slow it down by a factor of 8 (6*8=48).
+
+If you can't get quite what you want with tick_scale, you can also tweak
+cycle_ticks.
+
+Eventually I might get round to letting you specify how many servo control
+outputs you want, and which outputs to use, via module parameters.
+
+As of August 30th 2012 the servoblaster.ko module is built against a 2.6.27+
+kernel source from github.
+
 
 Richard Hirst <richardghirst@gmail.com>  August 2012
 

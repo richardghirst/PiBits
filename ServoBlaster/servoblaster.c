@@ -50,7 +50,7 @@
 #include <mach/platform.h>
 #include <asm/uaccess.h>
 #include <mach/dma.h>
-#include "servoblaster.h"
+//#include "servoblaster.h"
 
 #define GPIO_LEN		0xb4
 #define DMA_LEN			0x24
@@ -139,6 +139,8 @@ static volatile uint32_t *pwm_reg;
 static dev_t devno;
 static struct cdev my_cdev;
 static int my_major;
+static int cycle_ticks = 2000;
+static int tick_scale = 6;
 
 // Wait until we're not processing the given servo (actually wait until
 // we are not processing the low period of the previous servo, or the
@@ -187,7 +189,7 @@ int init_module(void)
 	}
 
 	ctldatabase = __get_free_pages(GFP_KERNEL, 0);
-	printk(KERN_INFO "ServoBlaster: Control page is at 0x%lx\n", ctldatabase);
+	printk(KERN_INFO "ServoBlaster: Control page is at 0x%lx, cycle_ticks %d, tick_scale %d\n", ctldatabase, cycle_ticks, tick_scale);
 	if (ctldatabase == 0) {
 		printk(KERN_WARNING "ServoBlaster: alloc_pages failed\n");
 		cdev_del(&my_cdev);
@@ -234,7 +236,7 @@ int init_module(void)
 		ctl->cb[i].info   = BCM2708_DMA_NO_WIDE_BURSTS | BCM2708_DMA_WAIT_RESP | BCM2708_DMA_D_DREQ | BCM2708_DMA_PER_MAP(5);
 		ctl->cb[i].src    = (uint32_t)(&ctl->pwmdata) & 0x7fffffff;
 		ctl->cb[i].dst    = ((PWM_BASE + PWM_FIFO*4) & 0x00ffffff) | 0x7e000000;
-		ctl->cb[i].length = sizeof(uint32_t) * 100;	// default 1000us high
+		ctl->cb[i].length = sizeof(uint32_t) * 1;	// default 1 tick high
 		ctl->cb[i].stride = 0;
 		ctl->cb[i].next = (uint32_t)(ctl->cb + i + 1) & 0x7fffffff;
 		// Set gpio lo
@@ -250,7 +252,7 @@ int init_module(void)
 		ctl->cb[i].info   = BCM2708_DMA_NO_WIDE_BURSTS | BCM2708_DMA_WAIT_RESP | BCM2708_DMA_D_DREQ | BCM2708_DMA_PER_MAP(5);
 		ctl->cb[i].src    = (uint32_t)(&ctl->pwmdata) & 0x7fffffff;
 		ctl->cb[i].dst    = ((PWM_BASE + PWM_FIFO*4) & 0x00ffffff) | 0x7e000000;
-		ctl->cb[i].length = sizeof(uint32_t) * 150;	// default 1500us, to give 2.5ms per servo
+		ctl->cb[i].length = sizeof(uint32_t) * (cycle_ticks / 8 - 1);
 		ctl->cb[i].stride = 0;
 		ctl->cb[i].next = (uint32_t)(ctl->cb + i + 1) & 0x7fffffff;
 	}
@@ -262,7 +264,7 @@ int init_module(void)
 	udelay(10);
 	clk_reg[PWMCLK_DIV] = 0x5A000000 | (32<<12);    // set pwm div to 32 (19.2MHz/32 = 600KHz)
 	clk_reg[PWMCLK_CNTL] = 0x5A000011;              // Source=osc and enable
-	pwm_reg[PWM_RNG1] = 6;							// 600KHz/6 = 10us per FIFO write
+	pwm_reg[PWM_RNG1] = tick_scale;							// 600KHz/6 = 10us per FIFO write
 	udelay(10);
 	ctl->pwmdata = 1;								// Give a pulse of one clock width for each fifo write
 	pwm_reg[PWM_DMAC] = PWMDMAC_ENAB | PWMDMAC_THRSHLD;
@@ -346,7 +348,7 @@ static ssize_t dev_write(struct file *filp,const char *buf,size_t count,loff_t *
 		printk(KERN_WARNING "ServoBlaster: Bad servo number %d\n", servo);
 		return -EINVAL;
 	}
-	if (cnt < 0 || cnt > 249) {
+	if (cnt < 0 || cnt > cycle_ticks / 8 - 1) {
 		printk(KERN_WARNING "ServoBlaster: Bad value %d\n", cnt);
 		return -EINVAL;
 	}
@@ -357,7 +359,7 @@ static ssize_t dev_write(struct file *filp,const char *buf,size_t count,loff_t *
 	} else {
 		ctl->cb[servo*4+0].dst = ((GPIO_BASE + GPSET0*4) & 0x00ffffff) | 0x7e000000;
 		ctl->cb[servo*4+1].length = cnt * sizeof(uint32_t);
-		ctl->cb[servo*4+3].length = (250 - cnt) * sizeof(uint32_t);
+		ctl->cb[servo*4+3].length = (cycle_ticks / 8 - cnt) * sizeof(uint32_t);
 	}
 	local_irq_enable();
 
@@ -377,4 +379,10 @@ static long dev_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 MODULE_DESCRIPTION("ServoBlaster, Multiple Servo Driver for the RaspberryPi");
 MODULE_AUTHOR("Richard Hirst <richardghirst@gmail.com>");
 MODULE_LICENSE("GPL v2");
+
+module_param(cycle_ticks, int, 0);
+MODULE_PARM_DESC(cycle_ticks, "number of ticks per cycle, max pulse is cycle_ticks/8");
+
+module_param(tick_scale, int, 0);
+MODULE_PARM_DESC(tick_scale, "scale the tick length, 6 should be 10us");
 
