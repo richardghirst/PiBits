@@ -1,0 +1,10 @@
+#!/bin/bash
+
+if [ "$ACTION" = "remove" ]; then
+        rm -f /dev/servoblaster
+elif [ "$ACTION" = "add" ]; then
+         major=$( sed -n 's/ servoblaster//p' /proc/devices )
+       [ "$major" ] && mknod -m 0666 /dev/servoblaster c $major 0
+fi
+
+exit 0

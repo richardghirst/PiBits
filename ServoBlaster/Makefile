@@ -1,4 +1,5 @@
 KERNEL_TREE := /home/richard/github/linux
+INSTALL_PATH := /lib/modules/$(shell /bin/uname -r)/kernel/drivers/misc/servoblaster
 
 all:	servoblaster.ko
 
@@ -9,6 +10,18 @@ servoblaster.ko:	servoblaster.c servoblaster.h
 
 servodemo:	servodemo.c servoblaster.h
 	gcc -Wall -g -O2 -o servodemo servodemo.c -Wl,--export-dynamic `pkg-config --cflags gtk+-3.0 gmodule-export-2.0` `pkg-config --libs gtk+-3.0 gmodule-export-2.0`
+
+install: servoblaster.ko
+	@echo "Installing servoblaster (requires root privileges)..."
+	#@sudo mkdir -p $(INSTALL_PATH)
+	#@sudo cp ./servoblaster.ko $(INSTALL_PATH)
+	#@sudo cp $(PWD)/udev_scripts/servoblaster /lib/udev
+	#@sudo cp $(PWD)/udev_scripts/20-servoblaster.rules /etc/udev/rules.d
+	#@sudo chmod +x /lib/udev/servoblaster
+	#@sudo cp $(PWD)/init_scripts/servoblaster /etc/init.d
+	#@sudo chmod +x /etc/init.d/servoblaster
+	#@sudo update-rc.d servoblaster defaults
+	@echo "Installation complete."
 
 clean:
 	make -C ${KERNEL_TREE} ARCH=arm CROSS_COMPILE=/usr/bin/arm-linux-gnueabi- M=$(PWD) clean
