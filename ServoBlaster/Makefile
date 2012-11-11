@@ -18,9 +18,8 @@ install: servoblaster.ko
 	@sudo cp $(PWD)/udev_scripts/servoblaster /lib/udev
 	@sudo cp $(PWD)/udev_scripts/20-servoblaster.rules /etc/udev/rules.d
 	@sudo chmod +x /lib/udev/servoblaster
-	@sudo cp $(PWD)/init_scripts/servoblaster /etc/init.d
-	@sudo chmod +x /etc/init.d/servoblaster
-	@sudo insserv servoblaster
+	@sudo depmod -a
+	@sudo modprobe servoblaster
 	@echo "Installation complete."
 
 clean:
