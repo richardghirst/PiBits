@@ -19,9 +19,9 @@ install: servoblaster.ko
 	@echo "ServoBlaster udev rules complete."
 
 install_autostart: install
-	@echo "Enabling servoblaster autostart on boot."
+	@echo "Enabling ServoBlaster autostart on boot."
 	@sudo mkdir -p $(INSTALL_PATH)
-	@sudo cp ./servoblaster.ko $(INSTALL_PATH)
+	@sudo cp $(PWD)/servoblaster.ko $(INSTALL_PATH)
 	@if ! grep servoblaster /etc/modules > /dev/null 2>&1; then sudo sed -i '$$a\servoblaster' /etc/modules; fi
 	@sudo depmod -a
 	@echo "ServoBlaster will now auto start on next boot."
