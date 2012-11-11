@@ -18,7 +18,7 @@ install: servoblaster.ko
 	@sudo chmod +x /lib/udev/servoblaster
 	@sudo mkdir -p $(INSTALL_PATH)
 	@sudo cp ./servoblaster.ko $(INSTALL_PATH)
-	@[ grep servoblaster /etc/modules > /dev/null 2>&1 ] || { sudo sed -i '$$a\servoblaster' /etc/modules; }
+	@if ! grep servoblaster /etc/modules > /dev/null 2>&1; then sudo sed -i '$$a\servoblaster' /etc/modules; fi
 	@sudo depmod -a
 	@sudo modprobe servoblaster
 	@echo "Installation complete."
