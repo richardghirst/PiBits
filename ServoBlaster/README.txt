@@ -22,21 +22,6 @@ echo 3=120 > /dev/servoblaster
 
 120 is in units of 10us, so that is 1200us, or 1.2ms.
 
-Upon reading, the device file provides feedback as to what position each servo
-is currently set.  For example, after starting the driver and running the
-previous command, you would see:
-
-pi@raspberrypi ~ $ cat /dev/servoblaster
-0 1
-1 1
-2 1
-3 120
-4 1
-5 1
-6 1
-7 1
-pi@raspberrypi ~ $ 
-
 When the driver is first loaded the GPIO pins are configure to be outputs, and
 their pulse widths are set to 0.  This is so that servos don't jump to some
 arbitrary postion when you load the driver.  Once you know where you want your
@@ -78,7 +63,10 @@ effects.
 Please read the driver source for more details, such as which GPIO pin maps to
 which servo number.  The comments at the top of servoblaster.c also explain how
 to make your system create the /dev/servoblaster device node automatically when
-the driver is loaded.
+the driver is loaded.  Alternatively running "make install" in the driver source
+directory will also create the necessary files.  Further to this, running
+"make install_autostart" will create those files, plus perform the necessary
+changes to make servoblaster be automatically loaded at boot.
 
 The driver uses DMA channel 0, and PWM channel 1.  It makes no attempt to
 protect against other code using those peripherals.  It sets the relevant GPIO
