@@ -63,7 +63,10 @@ effects.
 Please read the driver source for more details, such as which GPIO pin maps to
 which servo number.  The comments at the top of servoblaster.c also explain how
 to make your system create the /dev/servoblaster device node automatically when
-the driver is loaded.
+the driver is loaded.  Alternatively running "make install" in the driver source
+directory will also create the necessary files.  Further to this, running
+"make install_autostart" will create those files, plus perform the necessary
+changes to make servoblaster be automatically loaded at boot.
 
 The driver uses DMA channel 0, and PWM channel 1.  It makes no attempt to
 protect against other code using those peripherals.  It sets the relevant GPIO
