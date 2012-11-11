@@ -22,6 +22,21 @@ echo 3=120 > /dev/servoblaster
 
 120 is in units of 10us, so that is 1200us, or 1.2ms.
 
+Upon reading, the device file provides feedback as to what position each servo
+is currently set.  For example, after starting the driver and running the
+previous command, you would see:
+
+pi@raspberrypi ~ $ cat /dev/servoblaster
+0 1
+1 1
+2 1
+3 120
+4 1
+5 1
+6 1
+7 1
+pi@raspberrypi ~ $ 
+
 When the driver is first loaded the GPIO pins are configure to be outputs, and
 their pulse widths are set to 0.  This is so that servos don't jump to some
 arbitrary postion when you load the driver.  Once you know where you want your
