@@ -323,7 +323,7 @@ static int dev_open(struct inode *inod,struct file *fil)
 
 static ssize_t dev_read(struct file *filp,char *buf,size_t count,loff_t *f_pos)
 {
-#if 0
+	ssize_t bytesPrinted = 0;
 	int servo;
 	static int idx=0;
 	// Allow 10 chars per line:
@@ -348,30 +348,28 @@ static ssize_t dev_read(struct file *filp,char *buf,size_t count,loff_t *f_pos)
 	if (*f_pos >= idx)
 	{
 		//EOF
-		return 0;
+		bytesPrinted=0;
 	}
 	else if ( (*f_pos + count) < idx )
 	{
 		// Sufficient data to fulfil request
-		if (copy_to_user(buf,returnedData+fpos,count) {
+		if (copy_to_user(buf,returnedData+*f_pos,count)) {
 			return -EFAULT;
 		}
 		*f_pos+=count;
-		return count;
+		bytesPrinted=count;
 	}
 	else
 	{
 		// Return all the data we have
 		const int nBytes = idx-*f_pos;
-		if (copy_to_user(buf,returnedData+*f_pos, nBytes) {
+		if (copy_to_user(buf,returnedData+*f_pos, nBytes)) {
                         return -EFAULT;
                 }
 		*f_pos+=nBytes;
-		return nBytes;
+		bytesPrinted=nBytes;
 	}
-#else
-	return 0;
-#endif
+	return bytesPrinted;
 }
 
 static ssize_t dev_write(struct file *filp,const char *buf,size_t count,loff_t *f_pos)
