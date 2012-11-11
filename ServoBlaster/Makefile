@@ -13,14 +13,14 @@ servodemo:	servodemo.c servoblaster.h
 
 install: servoblaster.ko
 	@echo "Installing servoblaster (requires root privileges)..."
-	#@sudo mkdir -p $(INSTALL_PATH)
-	#@sudo cp ./servoblaster.ko $(INSTALL_PATH)
-	#@sudo cp $(PWD)/udev_scripts/servoblaster /lib/udev
-	#@sudo cp $(PWD)/udev_scripts/20-servoblaster.rules /etc/udev/rules.d
-	#@sudo chmod +x /lib/udev/servoblaster
-	#@sudo cp $(PWD)/init_scripts/servoblaster /etc/init.d
-	#@sudo chmod +x /etc/init.d/servoblaster
-	#@sudo update-rc.d servoblaster defaults
+	@sudo mkdir -p $(INSTALL_PATH)
+	@sudo cp ./servoblaster.ko $(INSTALL_PATH)
+	@sudo cp $(PWD)/udev_scripts/servoblaster /lib/udev
+	@sudo cp $(PWD)/udev_scripts/20-servoblaster.rules /etc/udev/rules.d
+	@sudo chmod +x /lib/udev/servoblaster
+	@sudo cp $(PWD)/init_scripts/servoblaster /etc/init.d
+	@sudo chmod +x /etc/init.d/servoblaster
+	@sudo update-rc.d servoblaster defaults
 	@echo "Installation complete."
 
 clean:
