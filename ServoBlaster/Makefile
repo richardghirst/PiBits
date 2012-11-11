@@ -16,7 +16,7 @@ install: servoblaster.ko
 	@sudo cp $(PWD)/udev_scripts/servoblaster /lib/udev
 	@sudo cp $(PWD)/udev_scripts/20-servoblaster.rules /etc/udev/rules.d
 	@sudo chmod +x /lib/udev/servoblaster
-	@echo "Servoblaster udev rules complete."
+	@echo "ServoBlaster udev rules complete."
 
 install_autostart: install
 	@echo "Enabling servoblaster autostart on boot."
