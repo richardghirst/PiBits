@@ -56,7 +56,7 @@
 #define DMA_LEN			0x24
 #define PWM_BASE		(BCM2708_PERI_BASE + 0x20C000)
 #define PWM_LEN			0x28
-#define CLK_BASE        (BCM2708_PERI_BASE + 0x101000)
+#define CLK_BASE		(BCM2708_PERI_BASE + 0x101000)
 #define CLK_LEN			0xA8
 
 #define GPFSEL0			(0x00/4)
@@ -236,7 +236,7 @@ int init_module(void)
 		ctl->cb[i].info   = BCM2708_DMA_NO_WIDE_BURSTS | BCM2708_DMA_WAIT_RESP | BCM2708_DMA_D_DREQ | BCM2708_DMA_PER_MAP(5);
 		ctl->cb[i].src    = (uint32_t)(&ctl->pwmdata) & 0x7fffffff;
 		ctl->cb[i].dst    = ((PWM_BASE + PWM_FIFO*4) & 0x00ffffff) | 0x7e000000;
-		ctl->cb[i].length = sizeof(uint32_t) * 1;	// default 1 tick high
+		ctl->cb[i].length = sizeof(uint32_t) * 0;	// default 0 tick high
 		ctl->cb[i].stride = 0;
 		ctl->cb[i].next = (uint32_t)(ctl->cb + i + 1) & 0x7fffffff;
 		// Set gpio lo
@@ -404,9 +404,9 @@ static ssize_t dev_write(struct file *filp,const char *buf,size_t count,loff_t *
 		ctl->cb[servo*4+0].dst = ((GPIO_BASE + GPCLR0*4) & 0x00ffffff) | 0x7e000000;
 	} else {
 		ctl->cb[servo*4+0].dst = ((GPIO_BASE + GPSET0*4) & 0x00ffffff) | 0x7e000000;
-		ctl->cb[servo*4+1].length = cnt * sizeof(uint32_t);
-		ctl->cb[servo*4+3].length = (cycle_ticks / 8 - cnt) * sizeof(uint32_t);
 	}
+	ctl->cb[servo*4+1].length = cnt * sizeof(uint32_t);
+	ctl->cb[servo*4+3].length = (cycle_ticks / 8 - cnt) * sizeof(uint32_t);
 	local_irq_enable();
 
 	return count;

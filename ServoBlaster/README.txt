@@ -39,7 +39,7 @@ pi@raspberrypi ~ $
 
 When the driver is first loaded the GPIO pins are configure to be outputs, and
 their pulse widths are set to 0.  This is so that servos don't jump to some
-arbitrary postion when you load the driver.  Once you know where you want your
+arbitrary position when you load the driver.  Once you know where you want your
 servos positioned, write a value to /dev/servoblaster to enable the respective
 output.  When the driver is unloaded it attempts to shut down the outputs
 cleanly, rather than cutting some pulse short and causing a servo position to
