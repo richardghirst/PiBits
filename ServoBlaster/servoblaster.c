@@ -400,13 +400,16 @@ static ssize_t dev_write(struct file *filp,const char *buf,size_t count,loff_t *
 	}
 	if (wait_for_servo(servo))
 		return -EINTR;
-	if (cnt == 0) {
-		ctl->cb[servo*4+0].dst = ((GPIO_BASE + GPCLR0*4) & 0x00ffffff) | 0x7e000000;
-	} else {
-		ctl->cb[servo*4+0].dst = ((GPIO_BASE + GPSET0*4) & 0x00ffffff) | 0x7e000000;
+
+	// Normally, the first GPIO transfer sets the output, while the second
+	// clears it after a delay.  For the special case of a delay of 0, we
+	// ensure that the first GPIO transfer also clears the output.
+	{
+		const int gp_set_or_clr = ( cnt != 0 ? GPSET0 : GPCLR0 );
+		ctl->cb[servo*4+0].dst = ((GPIO_BASE + gp_set_or_clr*4) & 0x00ffffff) | 0x7e000000;
+		ctl->cb[servo*4+1].length = cnt * sizeof(uint32_t);
+		ctl->cb[servo*4+3].length = (cycle_ticks / 8 - cnt) * sizeof(uint32_t);
 	}
-	ctl->cb[servo*4+1].length = cnt * sizeof(uint32_t);
-	ctl->cb[servo*4+3].length = (cycle_ticks / 8 - cnt) * sizeof(uint32_t);
 	local_irq_enable();
 
 	return count;
