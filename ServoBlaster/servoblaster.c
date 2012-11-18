@@ -404,45 +404,49 @@ static ssize_t dev_read(struct file *filp,char *buf,size_t count,loff_t *f_pos)
 
 static ssize_t dev_write(struct file *filp,const char *buf,size_t count,loff_t *f_pos)
 {
-	int servo;
-	int cnt;
-	int n;
 	char str[32];
-	char dummy;
 
-	cnt = count < 32 ? count : 31;
-	if (copy_from_user(str, buf, cnt)) {
+	if (count > 31) count = 31;
+	if (copy_from_user(str, buf, count)) {
 		return -EFAULT;
 	}
-	str[cnt] = '\0';
-	n = sscanf(str, "%d=%d\n%c", &servo, &cnt, &dummy);
-	if (n != 2) {
-		printk(KERN_WARNING "ServoBlaster: Failed to parse command (n=%d)\n", n);
-		return -EINVAL;
-	}
-	if (servo < 0 || servo >= NUM_SERVOS) {
-		printk(KERN_WARNING "ServoBlaster: Bad servo number %d\n", servo);
-		return -EINVAL;
-	}
-	if (cnt < 0 || cnt > cycle_ticks / 8 - 1) {
-		printk(KERN_WARNING "ServoBlaster: Bad value %d\n", cnt);
-		return -EINVAL;
-	}
-	if (wait_for_servo(servo))
-		return -EINTR;
+	str[count] = '\0';
 
-	// Normally, the first GPIO transfer sets the output, while the second
-	// clears it after a delay.  For the special case of a delay of 0, we
-	// ensure that the first GPIO transfer also clears the output.
-	if (cnt == 0) {
-		ctl->cb[servo*4+0].dst = ((GPIO_BASE + GPCLR0*4) & 0x00ffffff) | 0x7e000000;
-	} else {
-		ctl->cb[servo*4+0].dst = ((GPIO_BASE + GPSET0*4) & 0x00ffffff) | 0x7e000000;
-		ctl->cb[servo*4+1].length = cnt * sizeof(uint32_t);
-		ctl->cb[servo*4+3].length = (cycle_ticks / 8 - cnt) * sizeof(uint32_t);
+	// Process the complete user string.
+	{
+		int servo;
+		int cnt;
+		int n;
+		char dummy;
+		n = sscanf(str, "%d=%d\n%c", &servo, &cnt, &dummy);
+		if (n != 2) {
+			printk(KERN_WARNING "ServoBlaster: Failed to parse command (n=%d)\n", n);
+			return -EINVAL;
+		}
+		if (servo < 0 || servo >= NUM_SERVOS) {
+			printk(KERN_WARNING "ServoBlaster: Bad servo number %d\n", servo);
+			return -EINVAL;
+		}
+		if (cnt < 0 || cnt > cycle_ticks / 8 - 1) {
+			printk(KERN_WARNING "ServoBlaster: Bad value %d\n", cnt);
+			return -EINVAL;
+		}
+		if (wait_for_servo(servo))
+			return -EINTR;
+
+		// Normally, the first GPIO transfer sets the output, while the second
+		// clears it after a delay.  For the special case of a delay of 0, we
+		// ensure that the first GPIO transfer also clears the output.
+		if (cnt == 0) {
+			ctl->cb[servo*4+0].dst = ((GPIO_BASE + GPCLR0*4) & 0x00ffffff) | 0x7e000000;
+		} else {
+			ctl->cb[servo*4+0].dst = ((GPIO_BASE + GPSET0*4) & 0x00ffffff) | 0x7e000000;
+			ctl->cb[servo*4+1].length = cnt * sizeof(uint32_t);
+			ctl->cb[servo*4+3].length = (cycle_ticks / 8 - cnt) * sizeof(uint32_t);
+		}
+		written_data[servo] = cnt;	// Record data for use by dev_read
+		local_irq_enable();
 	}
-	written_data[servo] = cnt;	// Record data for use by dev_read
-	local_irq_enable();
 
 	return count;
 }
