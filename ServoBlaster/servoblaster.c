@@ -404,31 +404,38 @@ static ssize_t dev_read(struct file *filp,char *buf,size_t count,loff_t *f_pos)
 
 static ssize_t dev_write(struct file *filp,const char *buf,size_t count,loff_t *f_pos)
 {
-	char* end_of_line=0;
-	static int idx=0;
-	static char str[32];
-	static const int max_idx = sizeof(str) - 1;
+	char* str = 0;
+	struct process_data* const pdata = filp->private_data;
+	if (0 == pdata) return 0;
 
-	if ((idx+count) > max_idx) count = max_idx-idx;
-	if (copy_from_user(str, buf+idx, count)) {
-		return -EFAULT;
-	}
-	idx+=count;
-	str[idx] = '\0';
-	end_of_line = strchr(str, '\n');
-	if (NULL == end_of_line)
+	// Read user data into str
 	{
-		if (31 == idx)  {
-			// Full buf without '\n'
-			printk(KERN_WARNING "ServoBlaster: Failed to parse command (%s)\n", str);
-			return -EINVAL;
-		}
-		return count;	// Incomplete line.
-	}
+		char* end_of_line=0;
+		static const int max_idx = sizeof(pdata->cmd_str) - 1;
+		int* const idx = &(pdata->cmd_idx);
+		str = pdata->cmd_str;
 
-	// We've reached end of command, so terminate string at '\n' and reset idx.
-	*end_of_line = '\0';
-	idx=0;
+		if ((*idx+count) > max_idx) count = max_idx-*idx;
+		if (copy_from_user(str, buf+*idx, count)) {
+			return -EFAULT;
+		}
+		*idx+=count;
+		str[*idx] = '\0';
+		end_of_line = strchr(str, '\n');
+		if (NULL == end_of_line)
+		{
+			if (31 == *idx)  {
+				// Full buf without '\n'
+				printk(KERN_WARNING "ServoBlaster: Failed to parse command (%s)\n", str);
+				return -EINVAL;
+			}
+			return count;	// Incomplete line.
+		}
+
+		// End of command, so terminate string at '\n' and reset idx.
+		*end_of_line = '\0';
+		*idx=0;
+	}
 
 	// Process the complete user string.
 	{
