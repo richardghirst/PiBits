@@ -316,31 +316,32 @@ void cleanup_module(void)
 	unregister_chrdev_region(devno, 1);
 }
 
-// This stores the /dev/servoblaster content for a given user process.
-struct userReturnedData {
-	int idx;
-	char returnedData[NUM_SERVOS * 10];
-};
+// This struct is used to store all temporary data required per process
+// which reads/writes the device file.
+struct process_data
+{
+	// Stores the /dev/servoblaster content for a given user process.
+	// Allowing 10 chars per line.
+	int ret_idx;
+	char ret_data[NUM_SERVOS * 10];
 
-// This stores one user command (single line) for a given user process.
-// e.g. "3=180"
-// Line length is expected to be <32
-struct userCommandData {
-	int idx;
-	char commandData[32];
+	// Stores one user command (single line) for a given user process.
+	// e.g. "3=180"
+	// Line length is expected to be <32
+	int cmd_idx;
+	char cmd_data[32];
 };
 
 // kmalloc the temporary data required for each user:
-//	*returnedData string for dev_read
-//	*useCommand buffer for dev_write to allow incremental writing of data.
 static int dev_open(struct inode *inod,struct file *fil)
 {
-	fil->private_data = kmalloc( 32, GFP_KERNEL );
+	fil->private_data = kmalloc( sizeof(struct process_data), GFP_KERNEL );
 	if (0 == fil->private_data)
 	{
 		printk(KERN_WARNING "ServoBlaster: Failed to allocate user data\n");
 		return -ENOMEM;
 	}
+	memset(fil->private_data, 0, sizeof(struct process_data));
 	return 0;
 }
 
@@ -351,47 +352,52 @@ static int written_data[NUM_SERVOS] = { 0 };
 static ssize_t dev_read(struct file *filp,char *buf,size_t count,loff_t *f_pos)
 {
 	ssize_t bytesPrinted = 0;
-	int servo;
-	static int idx=0;
-	// Allow 10 chars per line:
-	static char returnedData[NUM_SERVOS * 10] = {0};
+	struct process_data* const pdata = filp->private_data;
 
-	if (0 == *f_pos)
+	// Only proceed if we have private data, else return EOF.
+	if (0 != pdata)
 	{
-		// Get fresh data
-		for (servo=0, idx=0; servo < NUM_SERVOS; ++servo)
+		int servo;
+		int* const idx = &(pdata->ret_idx);
+		char* const returnedData = pdata->ret_data;
+
+		if (0 == *f_pos)
 		{
-			idx += snprintf(returnedData+idx, sizeof(returnedData)-idx,
-				"%i %i\n",
-				servo,
-				written_data[servo]
-			);
+			// Get fresh data
+			for (servo=0, *idx=0; servo < NUM_SERVOS; ++servo)
+			{
+				*idx += snprintf(returnedData+*idx, sizeof(pdata->ret_data)-*idx,
+					"%i %i\n",
+					servo,
+					written_data[servo]
+				);
+			}
 		}
-	}
 
-	if (*f_pos >= idx)
-	{
-		//EOF
-		bytesPrinted=0;
-	}
-	else if ( (*f_pos + count) < idx )
-	{
-		// Sufficient data to fulfil request
-		if (copy_to_user(buf,returnedData+*f_pos,count)) {
-			return -EFAULT;
+		if (*f_pos >= *idx)
+		{
+			//EOF
+			bytesPrinted=0;
 		}
-		*f_pos+=count;
-		bytesPrinted=count;
-	}
-	else
-	{
-		// Return all the data we have
-		const int nBytes = idx-*f_pos;
-		if (copy_to_user(buf,returnedData+*f_pos, nBytes)) {
-                        return -EFAULT;
-                }
-		*f_pos+=nBytes;
-		bytesPrinted=nBytes;
+		else if ( (*f_pos + count) < *idx )
+		{
+			// Sufficient data to fulfil request
+			if (copy_to_user(buf,returnedData+*f_pos,count)) {
+				return -EFAULT;
+			}
+			*f_pos+=count;
+			bytesPrinted=count;
+		}
+		else
+		{
+			// Return all the data we have
+			const int nBytes = *idx-*f_pos;
+			if (copy_to_user(buf,returnedData+*f_pos, nBytes)) {
+							return -EFAULT;
+					}
+			*f_pos+=nBytes;
+			bytesPrinted=nBytes;
+		}
 	}
 	return bytesPrinted;
 }
