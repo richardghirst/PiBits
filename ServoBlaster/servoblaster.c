@@ -321,6 +321,8 @@ static int dev_open(struct inode *inod,struct file *fil)
 	return 0;
 }
 
+static int written_data[NUM_SERVOS] = { 0 };
+
 static ssize_t dev_read(struct file *filp,char *buf,size_t count,loff_t *f_pos)
 {
 	ssize_t bytesPrinted = 0;
@@ -334,13 +336,10 @@ static ssize_t dev_read(struct file *filp,char *buf,size_t count,loff_t *f_pos)
 		// Get fresh data
 		for (servo=0, idx=0; servo < NUM_SERVOS; ++servo)
 		{
-			if (wait_for_servo(servo))
-				return -EINTR;
-
 			idx += snprintf(returnedData+idx, sizeof(returnedData)-idx,
-				"%i %lu\n",
+				"%i %i\n",
 				servo,
-				ctl->cb[servo*4+1].length / sizeof(uint32_t)
+				written_data[servo]
 			);
 		}
 	}
@@ -411,6 +410,7 @@ static ssize_t dev_write(struct file *filp,const char *buf,size_t count,loff_t *
 		ctl->cb[servo*4+1].length = cnt * sizeof(uint32_t);
 		ctl->cb[servo*4+3].length = (cycle_ticks / 8 - cnt) * sizeof(uint32_t);
 	}
+	written_data[servo] = cnt;	// Record data for use by dev_read
 	local_irq_enable();
 
 	return count;
