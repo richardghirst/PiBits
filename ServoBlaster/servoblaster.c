@@ -329,7 +329,7 @@ struct process_data
 	// e.g. "3=180"
 	// Line length is expected to be <32
 	int cmd_idx;
-	char cmd_data[32];
+	char cmd_str[32];
 };
 
 // kmalloc the temporary data required for each user:
@@ -404,21 +404,38 @@ static ssize_t dev_read(struct file *filp,char *buf,size_t count,loff_t *f_pos)
 
 static ssize_t dev_write(struct file *filp,const char *buf,size_t count,loff_t *f_pos)
 {
-	char str[32];
+	char* end_of_line=0;
+	static int idx=0;
+	static char str[32];
+	static const int max_idx = sizeof(str) - 1;
 
-	if (count > 31) count = 31;
-	if (copy_from_user(str, buf, count)) {
+	if ((idx+count) > max_idx) count = max_idx-idx;
+	if (copy_from_user(str, buf+idx, count)) {
 		return -EFAULT;
 	}
-	str[count] = '\0';
+	idx+=count;
+	str[idx] = '\0';
+	end_of_line = strchr(str, '\n');
+	if (NULL == end_of_line)
+	{
+		if (31 == idx)  {
+			// Full buf without '\n'
+			printk(KERN_WARNING "ServoBlaster: Failed to parse command (%s)\n", str);
+			return -EINVAL;
+		}
+		return count;	// Incomplete line.
+	}
+
+	// We've reached end of command, so terminate string at '\n' and reset idx.
+	*end_of_line = '\0';
+	idx=0;
 
 	// Process the complete user string.
 	{
 		int servo;
 		int cnt;
 		int n;
-		char dummy;
-		n = sscanf(str, "%d=%d\n%c", &servo, &cnt, &dummy);
+		n = sscanf(str, "%d=%d", &servo, &cnt);
 		if (n != 2) {
 			printk(KERN_WARNING "ServoBlaster: Failed to parse command (n=%d)\n", n);
 			return -EINVAL;
