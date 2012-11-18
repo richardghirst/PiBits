@@ -47,6 +47,7 @@
 #include <linux/scatterlist.h>
 #include <linux/delay.h>
 #include <linux/sched.h>
+#include <linux/slab.h>
 #include <mach/platform.h>
 #include <asm/uaccess.h>
 #include <mach/dma.h>
@@ -315,12 +316,22 @@ void cleanup_module(void)
 	unregister_chrdev_region(devno, 1);
 }
 
-
+// kmalloc the temporary data required for each user:
+//	*returnedData string for dev_read
+//	*useCommand buffer for dev_write to allow incremental writing of data.
 static int dev_open(struct inode *inod,struct file *fil)
 {
+	fil->private_data = kmalloc( 32, GFP_KERNEL );
+	if (0 == fil->private_data)
+	{
+		printk(KERN_WARNING "ServoBlaster: Failed to allocate user data\n");
+		return -ENOMEM;
+	}
 	return 0;
 }
 
+// This records the written count values.  Cannot derive data directly from DMA
+// control blocks as current algorithm has a special case for a count of zero.
 static int written_data[NUM_SERVOS] = { 0 };
 
 static ssize_t dev_read(struct file *filp,char *buf,size_t count,loff_t *f_pos)
@@ -418,6 +429,7 @@ static ssize_t dev_write(struct file *filp,const char *buf,size_t count,loff_t *
 
 static int dev_close(struct inode *inod,struct file *fil)
 {
+	if (0 != fil->private_data) kfree(fil->private_data);
 	return 0;
 }
 
