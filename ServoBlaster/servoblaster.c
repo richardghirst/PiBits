@@ -318,7 +318,7 @@ void cleanup_module(void)
 
 // This stores the /dev/servoblaster content for a given user process.
 struct userReturnedData {
-	int idx=0;
+	int idx;
 	char returnedData[NUM_SERVOS * 10];
 };
 
@@ -326,7 +326,7 @@ struct userReturnedData {
 // e.g. "3=180"
 // Line length is expected to be <32
 struct userCommandData {
-	int idx=0;
+	int idx;
 	char commandData[32];
 };
 
