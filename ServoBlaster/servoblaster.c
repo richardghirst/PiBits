@@ -316,6 +316,20 @@ void cleanup_module(void)
 	unregister_chrdev_region(devno, 1);
 }
 
+// This stores the /dev/servoblaster content for a given user process.
+struct userReturnedData {
+	int idx=0;
+	char returnedData[NUM_SERVOS * 10];
+};
+
+// This stores one user command (single line) for a given user process.
+// e.g. "3=180"
+// Line length is expected to be <32
+struct userCommandData {
+	int idx=0;
+	char commandData[32];
+};
+
 // kmalloc the temporary data required for each user:
 //	*returnedData string for dev_read
 //	*useCommand buffer for dev_write to allow incremental writing of data.
