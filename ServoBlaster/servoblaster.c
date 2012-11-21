@@ -415,12 +415,20 @@ static ssize_t dev_write(struct file *filp,const char *buf,size_t count,loff_t *
 		int* const idx = &(pdata->cmd_idx);
 		str = pdata->cmd_str;
 
+		printk(KERN_WARNING "ServoBlasterA: idx(%i),count(%u),max_idx (%i)\n",
+			*idx,count, max_idx
+		);
+
 		if ((*idx+count) > max_idx) count = max_idx-*idx;
-		if (copy_from_user(str, buf+*idx, count)) {
+		if (copy_from_user(str+*idx, buf, count)) {
 			return -EFAULT;
 		}
 		*idx+=count;
 		str[*idx] = '\0';
+		printk(KERN_WARNING "ServoBlasterB: idx(%i),count(%u),max_idx (%i) str(%s)EOS\n",
+			*idx, count, max_idx, str
+		);
+
 		end_of_line = strchr(str, '\n');
 		if (NULL == end_of_line)
 		{
@@ -442,6 +450,7 @@ static ssize_t dev_write(struct file *filp,const char *buf,size_t count,loff_t *
 		int servo;
 		int cnt;
 		int n;
+		printk(KERN_WARNING "ServoBlasterc: str(%s)\n", str);
 		n = sscanf(str, "%d=%d", &servo, &cnt);
 		if (n != 2) {
 			printk(KERN_WARNING "ServoBlaster: Failed to parse command (n=%d)\n", n);
