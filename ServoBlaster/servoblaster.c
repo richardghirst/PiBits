@@ -47,16 +47,16 @@
 #include <linux/scatterlist.h>
 #include <linux/delay.h>
 #include <linux/sched.h>
+#include <linux/slab.h>
 #include <mach/platform.h>
 #include <asm/uaccess.h>
 #include <mach/dma.h>
-//#include "servoblaster.h"
 
 #define GPIO_LEN		0xb4
 #define DMA_LEN			0x24
 #define PWM_BASE		(BCM2708_PERI_BASE + 0x20C000)
 #define PWM_LEN			0x28
-#define CLK_BASE        (BCM2708_PERI_BASE + 0x101000)
+#define CLK_BASE		(BCM2708_PERI_BASE + 0x101000)
 #define CLK_LEN			0xA8
 
 #define GPFSEL0			(0x00/4)
@@ -315,31 +315,101 @@ void cleanup_module(void)
 	unregister_chrdev_region(devno, 1);
 }
 
+// This struct is used to store all temporary data required per process
+// which reads/writes the device file.
+struct process_data
+{
+	// Stores the /dev/servoblaster content for a given user process.
+	// Allowing 10 chars per line.
+	int ret_idx;
+	char ret_data[NUM_SERVOS * 10];
 
+	// Stores up to NUM_SERVOS user commands (of up to 10 chars) per user process.
+	// e.g. "1=60\n2=45\n3=180\n"
+	int cmd_idx;
+	char cmd_str[NUM_SERVOS * 10];
+};
+
+// kmalloc the temporary data required for each user:
 static int dev_open(struct inode *inod,struct file *fil)
 {
+	fil->private_data = kmalloc( sizeof(struct process_data), GFP_KERNEL );
+	if (0 == fil->private_data)
+	{
+		printk(KERN_WARNING "ServoBlaster: Failed to allocate user data\n");
+		return -ENOMEM;
+	}
+	memset(fil->private_data, 0, sizeof(struct process_data));
 	return 0;
 }
+
+// This records the written count values.  Cannot derive data directly from DMA
+// control blocks as current algorithm has a special case for a count of zero.
+static int written_data[NUM_SERVOS] = { 0 };
 
 static ssize_t dev_read(struct file *filp,char *buf,size_t count,loff_t *f_pos)
 {
-	return 0;
+	ssize_t bytesPrinted = 0;
+	struct process_data* const pdata = filp->private_data;
+
+	// Only proceed if we have private data, else return EOF.
+	if (0 != pdata)
+	{
+		int servo;
+		int* const idx = &(pdata->ret_idx);
+		char* const returnedData = pdata->ret_data;
+
+		if (0 == *f_pos)
+		{
+			// Get fresh data
+			for (servo=0, *idx=0; servo < NUM_SERVOS; ++servo)
+			{
+				*idx += snprintf(returnedData+*idx, sizeof(pdata->ret_data)-*idx,
+					"%i=%i\n",
+					servo,
+					written_data[servo]
+				);
+			}
+		}
+
+		if (*f_pos >= *idx)
+		{
+			//EOF
+			bytesPrinted=0;
+		}
+		else if ( (*f_pos + count) < *idx )
+		{
+			// Sufficient data to fulfil request
+			if (copy_to_user(buf,returnedData+*f_pos,count)) {
+				return -EFAULT;
+			}
+			*f_pos+=count;
+			bytesPrinted=count;
+		}
+		else
+		{
+			// Return all the data we have
+			const int nBytes = *idx-*f_pos;
+			if (copy_to_user(buf,returnedData+*f_pos, nBytes)) {
+							return -EFAULT;
+					}
+			*f_pos+=nBytes;
+			bytesPrinted=nBytes;
+		}
+	}
+	return bytesPrinted;
 }
 
-static ssize_t dev_write(struct file *filp,const char *buf,size_t count,loff_t *f_pos)
+// This function takes a single null terminated command string of this
+// sort of format;
+// 		2=130
+// where in this case, servo 2 is given a high duration of 130.
+ssize_t process_command_string(const char str[])
 {
 	int servo;
 	int cnt;
 	int n;
-	char str[32];
-	char dummy;
-
-	cnt = count < 32 ? count : 31;
-	if (copy_from_user(str, buf, cnt)) {
-		return -EFAULT;
-	}
-	str[cnt] = '\0';
-	n = sscanf(str, "%d=%d\n%c", &servo, &cnt, &dummy);
+	n = sscanf(str, "%d=%d", &servo, &cnt);
 	if (n != 2) {
 		printk(KERN_WARNING "ServoBlaster: Failed to parse command (n=%d)\n", n);
 		return -EINVAL;
@@ -354,6 +424,10 @@ static ssize_t dev_write(struct file *filp,const char *buf,size_t count,loff_t *
 	}
 	if (wait_for_servo(servo))
 		return -EINTR;
+
+	// Normally, the first GPIO transfer sets the output, while the second
+	// clears it after a delay.  For the special case of a delay of 0, we
+	// ensure that the first GPIO transfer also clears the output.
 	if (cnt == 0) {
 		ctl->cb[servo*4+0].dst = ((GPIO_BASE + GPCLR0*4) & 0x00ffffff) | 0x7e000000;
 	} else {
@@ -361,13 +435,56 @@ static ssize_t dev_write(struct file *filp,const char *buf,size_t count,loff_t *
 		ctl->cb[servo*4+1].length = cnt * sizeof(uint32_t);
 		ctl->cb[servo*4+3].length = (cycle_ticks / 8 - cnt) * sizeof(uint32_t);
 	}
+	written_data[servo] = cnt;	// Record data for use by dev_read
 	local_irq_enable();
+	return 0;
+}
+
+// Read user data into buffer until full.
+static ssize_t dev_write(struct file *filp,const char *buf,size_t count,loff_t *f_pos)
+{
+	struct process_data* const pdata = filp->private_data;
+	if (0 == pdata) return 0;
+
+	{
+		static const int max_idx = sizeof(pdata->cmd_str) - 1;
+		int* const idx = &(pdata->cmd_idx);
+
+		if ((*idx+count) > max_idx) count = max_idx-*idx;
+		if (copy_from_user(pdata->cmd_str + *idx, buf, count)) {
+			return -EFAULT;
+		}
+		*idx+=count;
+	}
 
 	return count;
 }
 
+// dev_close separates the user input (delimited by \n) into strings for passing
+// to process_command_string() then frees up all process data
 static int dev_close(struct inode *inod,struct file *fil)
 {
+	struct process_data* const pdata = fil->private_data;
+	if (0 != pdata)
+	{
+		static const int max_idx = sizeof(pdata->cmd_str) - 1;
+		char* cmd_str = pdata->cmd_str;
+		char* command;
+		cmd_str[max_idx] = 0;	// Ensure command string is null terminated.
+
+		// Execute all commands.
+		command = strsep(&cmd_str, "\n");
+		while( NULL != command ) {
+			if (*command != 0) {
+				printk(KERN_DEBUG "ServoBlaster: Command %s\n", command);
+				(void)process_command_string(command);
+			}
+			command = strsep(&cmd_str, "\n");
+		}
+
+		// Free process data.
+		kfree(pdata);
+	}
 	return 0;
 }
 
