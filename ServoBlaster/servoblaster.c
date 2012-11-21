@@ -365,7 +365,7 @@ static ssize_t dev_read(struct file *filp,char *buf,size_t count,loff_t *f_pos)
 			for (servo=0, *idx=0; servo < NUM_SERVOS; ++servo)
 			{
 				*idx += snprintf(returnedData+*idx, sizeof(pdata->ret_data)-*idx,
-					"%i %i\n",
+					"%i=%i\n",
 					servo,
 					written_data[servo]
 				);
