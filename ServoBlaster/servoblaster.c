@@ -51,7 +51,6 @@
 #include <mach/platform.h>
 #include <asm/uaccess.h>
 #include <mach/dma.h>
-//#include "servoblaster.h"
 
 #define GPIO_LEN		0xb4
 #define DMA_LEN			0x24
@@ -410,7 +409,6 @@ ssize_t process_command_string(const char str[])
 	int servo;
 	int cnt;
 	int n;
-	printk(KERN_WARNING "ServoBlasterc: str(%s)\n", str);
 	n = sscanf(str, "%d=%d", &servo, &cnt);
 	if (n != 2) {
 		printk(KERN_WARNING "ServoBlaster: Failed to parse command (n=%d)\n", n);
@@ -442,63 +440,51 @@ ssize_t process_command_string(const char str[])
 	return 0;
 }
 
-// dev_write separates the user input (delimited by \n) into strings for passing
-// to process_command_string()
+// Read user data into buffer until full.
 static ssize_t dev_write(struct file *filp,const char *buf,size_t count,loff_t *f_pos)
 {
-	char* str = 0;
 	struct process_data* const pdata = filp->private_data;
 	if (0 == pdata) return 0;
 
-	// Read user data into str
 	{
-		char* end_of_line=0;
 		static const int max_idx = sizeof(pdata->cmd_str) - 1;
 		int* const idx = &(pdata->cmd_idx);
-		str = pdata->cmd_str;
-
-		printk(KERN_WARNING "ServoBlasterA: idx(%i),count(%u),max_idx (%i)\n",
-			*idx,count, max_idx
-		);
 
 		if ((*idx+count) > max_idx) count = max_idx-*idx;
-		if (copy_from_user(str+*idx, buf, count)) {
+		if (copy_from_user(pdata->cmd_str + *idx, buf, count)) {
 			return -EFAULT;
 		}
 		*idx+=count;
-		str[*idx] = '\0';
-		printk(KERN_WARNING "ServoBlasterB: idx(%i),count(%u),max_idx (%i) str(%s)EOS\n",
-			*idx, count, max_idx, str
-		);
-
-		end_of_line = strchr(str, '\n');
-		if (NULL == end_of_line)
-		{
-			if (max_idx == *idx)  {
-				// Full buf without '\n'
-				printk(KERN_WARNING "ServoBlaster: Failed to parse command (%s)\n", str);
-				return -EINVAL;
-			}
-			return count;	// Incomplete line.
-		}
-
-		// End of command, so terminate string at '\n' and reset idx.
-		*end_of_line = '\0';
-		*idx=0;
-	}
-
-	// Process the complete user string.
-	{
-		ssize_t error = process_command_string(str);
-		if (error < 0) count=error;
 	}
 
 	return count;
 }
 
+// dev_close separates the user input (delimited by \n) into strings for passing
+// to process_command_string() then frees up all process data
 static int dev_close(struct inode *inod,struct file *fil)
 {
-	if (0 != fil->private_data) kfree(fil->private_data);
+	struct process_data* const pdata = fil->private_data;
+	if (0 != pdata)
+	{
+		static const int max_idx = sizeof(pdata->cmd_str) - 1;
+		char* cmd_str = pdata->cmd_str;
+		char* command;
+		cmd_str[max_idx] = 0;	// Ensure command string is null terminated.
+
+		// Execute all commands.
+		command = strsep(&cmd_str, "\n");
+		while( NULL != command ) {
+			if (*command != 0) {
+				printk(KERN_DEBUG "ServoBlaster: Command %s\n", command);
+				(void)process_command_string(command);
+			}
+			command = strsep(&cmd_str, "\n");
+		}
+
+		// Free process data.
+		kfree(pdata);
+	}
 	return 0;
 }
 
