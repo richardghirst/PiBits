@@ -325,11 +325,10 @@ struct process_data
 	int ret_idx;
 	char ret_data[NUM_SERVOS * 10];
 
-	// Stores one user command (single line) for a given user process.
-	// e.g. "3=180"
-	// Line length is expected to be <32
+	// Stores up to NUM_SERVOS user commands (of up to 10 chars) per user process.
+	// e.g. "1=60\n2=45\n3=180\n"
 	int cmd_idx;
-	char cmd_str[32];
+	char cmd_str[NUM_SERVOS * 10];
 };
 
 // kmalloc the temporary data required for each user:
