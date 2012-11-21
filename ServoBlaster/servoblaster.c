@@ -474,7 +474,7 @@ static ssize_t dev_write(struct file *filp,const char *buf,size_t count,loff_t *
 		end_of_line = strchr(str, '\n');
 		if (NULL == end_of_line)
 		{
-			if (31 == *idx)  {
+			if (max_idx == *idx)  {
 				// Full buf without '\n'
 				printk(KERN_WARNING "ServoBlaster: Failed to parse command (%s)\n", str);
 				return -EINVAL;
