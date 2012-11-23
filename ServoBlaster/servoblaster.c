@@ -369,7 +369,7 @@ static ssize_t dev_read(struct file *filp, char *buf, size_t count, loff_t *f_po
 				p += snprintf(p, end - p, "%i=%i\n", servo,
 					servo_pos[servo]);
 			}
-			pdata->rd_len = end - p;
+			pdata->rd_len = p - pdata->rd_data;
 		}
 
 		if (*f_pos < pdata->rd_len) {
