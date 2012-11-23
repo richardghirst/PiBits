@@ -27,14 +27,14 @@ is currently set.  For example, after starting the driver and running the
 previous command, you would see:
 
 pi@raspberrypi ~ $ cat /dev/servoblaster
-0 0
-1 0
-2 0
-3 120
-4 0
-5 0
-6 0
-7 0
+0=0
+1=0
+2=0
+3=120
+4=0
+5=0
+6=0
+7=0
 pi@raspberrypi ~ $ 
 
 When the driver is first loaded the GPIO pins are configure to be outputs, and
