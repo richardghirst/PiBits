@@ -122,11 +122,30 @@ static uint8_t servo2gpio[] = {
 };
 #define NUM_SERVOS	(sizeof(servo2gpio)/sizeof(servo2gpio[0]))
 
+// This struct is used to store all temporary data associated with a given
+// open() of /dev/servoblaster
+struct private_data
+{
+	// Stores the return string for a read of /dev/servoblaster
+	// Allowing 10 chars per line.
+	int rd_len;
+	char rd_data[NUM_SERVOS * 10];
+
+	// Stores partial command strings between calls to write(), in case
+	// someone uses multiple write() calls to issue a single command.
+	int partial_len;
+	char partial_cmd[10];
+
+	// If we get bad data on a write() we reject all subsequent writes
+	// until the process closes and reopens the device.
+	int reject_writes;
+};
+
 // Structure of our control data, stored in a 4K page, and accessed by dma controller
 struct ctldata_s {
 	struct bcm2708_dma_cb cb[NUM_SERVOS * 4];	// gpio-hi, delay, gpio-lo, delay, for each servo output
-	uint32_t gpiodata[NUM_SERVOS];				// set-pin, clear-pin values, per servo output
-	uint32_t pwmdata;							// the word we write to the pwm fifo
+	uint32_t gpiodata[NUM_SERVOS];			// set-pin, clear-pin values, per servo output
+	uint32_t pwmdata;				// the word we write to the pwm fifo
 };
 
 static struct ctldata_s *ctl;
@@ -141,6 +160,11 @@ static struct cdev my_cdev;
 static int my_major;
 static int cycle_ticks = 2000;
 static int tick_scale = 6;
+
+// This records the written count values so we can display them on a read()
+// call.  Cannot derive data directly from DMA control blocks as current
+// algorithm has a special case for a count of zero.
+static int servo_pos[NUM_SERVOS] = { 0 };
 
 // Wait until we're not processing the given servo (actually wait until
 // we are not processing the low period of the previous servo, or the
@@ -315,105 +339,54 @@ void cleanup_module(void)
 	unregister_chrdev_region(devno, 1);
 }
 
-// This struct is used to store all temporary data required per process
-// which reads/writes the device file.
-struct process_data
-{
-	// Stores the /dev/servoblaster content for a given user process.
-	// Allowing 10 chars per line.
-	int ret_idx;
-	char ret_data[NUM_SERVOS * 10];
-
-	// Stores up to NUM_SERVOS user commands (of up to 10 chars) per user process.
-	// e.g. "1=60\n2=45\n3=180\n"
-	int cmd_idx;
-	char cmd_str[NUM_SERVOS * 10];
-};
-
 // kmalloc the temporary data required for each user:
-static int dev_open(struct inode *inod,struct file *fil)
+static int dev_open(struct inode *inod, struct file *fil)
 {
-	fil->private_data = kmalloc( sizeof(struct process_data), GFP_KERNEL );
+	fil->private_data = kmalloc(sizeof(struct private_data), GFP_KERNEL);
 	if (0 == fil->private_data)
 	{
 		printk(KERN_WARNING "ServoBlaster: Failed to allocate user data\n");
 		return -ENOMEM;
 	}
-	memset(fil->private_data, 0, sizeof(struct process_data));
+	memset(fil->private_data, 0, sizeof(struct private_data));
+
 	return 0;
 }
 
-// This records the written count values.  Cannot derive data directly from DMA
-// control blocks as current algorithm has a special case for a count of zero.
-static int written_data[NUM_SERVOS] = { 0 };
-
-static ssize_t dev_read(struct file *filp,char *buf,size_t count,loff_t *f_pos)
+static ssize_t dev_read(struct file *filp, char *buf, size_t count, loff_t *f_pos)
 {
-	ssize_t bytesPrinted = 0;
-	struct process_data* const pdata = filp->private_data;
+	ssize_t ret = 0;
+	struct private_data* const pdata = filp->private_data;
 
 	// Only proceed if we have private data, else return EOF.
-	if (0 != pdata)
-	{
-		int servo;
-		int* const idx = &(pdata->ret_idx);
-		char* const returnedData = pdata->ret_data;
+	if (pdata) {
+		if (0 == *f_pos) {
+			int servo;
+			char *p = pdata->rd_data, *end = p + sizeof(pdata->rd_data);
 
-		if (0 == *f_pos)
-		{
 			// Get fresh data
-			for (servo=0, *idx=0; servo < NUM_SERVOS; ++servo)
-			{
-				*idx += snprintf(returnedData+*idx, sizeof(pdata->ret_data)-*idx,
-					"%i=%i\n",
-					servo,
-					written_data[servo]
-				);
+			for (servo = 0; servo < NUM_SERVOS; ++servo) {
+				p += snprintf(p, end - p, "%i=%i\n", servo,
+					servo_pos[servo]);
 			}
+			pdata->rd_len = end - p;
 		}
 
-		if (*f_pos >= *idx)
-		{
-			//EOF
-			bytesPrinted=0;
-		}
-		else if ( (*f_pos + count) < *idx )
-		{
-			// Sufficient data to fulfil request
-			if (copy_to_user(buf,returnedData+*f_pos,count)) {
+		if (*f_pos < pdata->rd_len) {
+			if (count > pdata->rd_len - *f_pos)
+				count = pdata->rd_len - *f_pos;
+			if (copy_to_user(buf, pdata->rd_data + *f_pos, count))
 				return -EFAULT;
-			}
-			*f_pos+=count;
-			bytesPrinted=count;
-		}
-		else
-		{
-			// Return all the data we have
-			const int nBytes = *idx-*f_pos;
-			if (copy_to_user(buf,returnedData+*f_pos, nBytes)) {
-							return -EFAULT;
-					}
-			*f_pos+=nBytes;
-			bytesPrinted=nBytes;
+			*f_pos += count;
+			ret = count;
 		}
 	}
-	return bytesPrinted;
+
+	return ret;
 }
 
-// This function takes a single null terminated command string of this
-// sort of format;
-// 		2=130
-// where in this case, servo 2 is given a high duration of 130.
-ssize_t process_command_string(const char str[])
+static int set_servo(int servo, int cnt) 
 {
-	int servo;
-	int cnt;
-	int n;
-	n = sscanf(str, "%d=%d", &servo, &cnt);
-	if (n != 2) {
-		printk(KERN_WARNING "ServoBlaster: Failed to parse command (n=%d)\n", n);
-		return -EINVAL;
-	}
 	if (servo < 0 || servo >= NUM_SERVOS) {
 		printk(KERN_WARNING "ServoBlaster: Bad servo number %d\n", servo);
 		return -EINVAL;
@@ -435,57 +408,79 @@ ssize_t process_command_string(const char str[])
 		ctl->cb[servo*4+1].length = cnt * sizeof(uint32_t);
 		ctl->cb[servo*4+3].length = (cycle_ticks / 8 - cnt) * sizeof(uint32_t);
 	}
-	written_data[servo] = cnt;	// Record data for use by dev_read
+	servo_pos[servo] = cnt;	// Record data for use by dev_read
 	local_irq_enable();
+
 	return 0;
 }
 
-// Read user data into buffer until full.
-static ssize_t dev_write(struct file *filp,const char *buf,size_t count,loff_t *f_pos)
+static ssize_t dev_write(struct file *filp,const char *user_buf,size_t count,loff_t *f_pos)
 {
-	struct process_data* const pdata = filp->private_data;
-	if (0 == pdata) return 0;
+	struct private_data* const pdata = filp->private_data;
+	char buf[128], *p = buf, nl;
+	int len = pdata->partial_len;
 
-	{
-		static const int max_idx = sizeof(pdata->cmd_str) - 1;
-		int* const idx = &(pdata->cmd_idx);
+	if (0 == pdata)
+		return -EFAULT;
+	if (pdata->reject_writes)
+		return -EINVAL;
+	memcpy(buf, pdata->partial_cmd, len);
+	pdata->partial_len = 0;
+	if (count > sizeof(buf) - len - 1)
+		count = sizeof(buf) - len - 1;
+	if (copy_from_user(buf+len, user_buf, count))
+		return -EFAULT;
+	len += count;
+	buf[len] = '\0';
+	while (p < buf+len) {
+		int servo, cnt, res;
 
-		if ((*idx+count) > max_idx) count = max_idx-*idx;
-		if (copy_from_user(pdata->cmd_str + *idx, buf, count)) {
-			return -EFAULT;
+		if (strchr(p, '\n')) {
+			if (sscanf(p, "%d=%d%c", &servo, &cnt, &nl) != 3 ||
+					nl != '\n') {
+				printk(KERN_WARNING "ServoBlaster: Bad data format\n");
+				pdata->reject_writes = 1;
+				return -EINVAL;
+			}
+			res = set_servo(servo, cnt);
+			if (res < 0) {
+				pdata->reject_writes = 1;
+				return res;
+			}
+			p = strchr(p, '\n') + 1;
 		}
-		*idx+=count;
+		else if (buf+len - p > 10) {
+			printk(KERN_WARNING "ServoBlaster: Bad data format\n");
+			pdata->reject_writes = 1;
+			return -EINVAL;
+		}
+		else {
+			// assume more data is coming...
+			break;
+		}
 	}
+	pdata->partial_len = buf+len - p;
+	memcpy(pdata->partial_cmd, p, pdata->partial_len);
 
 	return count;
 }
 
-// dev_close separates the user input (delimited by \n) into strings for passing
-// to process_command_string() then frees up all process data
 static int dev_close(struct inode *inod,struct file *fil)
 {
-	struct process_data* const pdata = fil->private_data;
-	if (0 != pdata)
-	{
-		static const int max_idx = sizeof(pdata->cmd_str) - 1;
-		char* cmd_str = pdata->cmd_str;
-		char* command;
-		cmd_str[max_idx] = 0;	// Ensure command string is null terminated.
+	struct private_data* const pdata = fil->private_data;
+	int ret = 0;
 
-		// Execute all commands.
-		command = strsep(&cmd_str, "\n");
-		while( NULL != command ) {
-			if (*command != 0) {
-				printk(KERN_DEBUG "ServoBlaster: Command %s\n", command);
-				(void)process_command_string(command);
-			}
-			command = strsep(&cmd_str, "\n");
+	if (pdata) {
+		if (pdata->partial_len) {
+			printk(KERN_WARNING "ServoBlaster: partial command "
+				"pending on close()\n");
+			ret = -EIO;
 		}
-
 		// Free process data.
 		kfree(pdata);
 	}
-	return 0;
+
+	return ret;
 }
 
 static long dev_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
