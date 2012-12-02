@@ -83,6 +83,21 @@ directory will also create the necessary files.  Further to this, running
 "make install_autostart" will create those files, plus perform the necessary
 changes to make servoblaster be automatically loaded at boot.
 
+Note that there are three different ways of referring to a specific servo
+control pin: by servo number, by GPIO pin on the processor, or by pin number
+on the P1 header on the Pi itself.  The following table shows the mapping
+between these number schemes:
+
+                 Servo    GPIO number     P1 Pin
+                   0           4             7  
+                   1          17            11  
+                   2          18            12  
+                   3          21            13  
+                   4          22            15  
+                   5          23            16  
+                   6          24            18  
+                   7          25            22  
+
 The driver uses DMA channel 0, and PWM channel 1.  It makes no attempt to
 protect against other code using those peripherals.  It sets the relevant GPIO
 pins to be outputs when the driver is loaded, so please ensure that you are not
