@@ -65,6 +65,7 @@
 #define GPCLR0			(0x28/4)
 
 #define PWM_CTL			(0x00/4)
+#define PWM_STA			(0x04/4)
 #define PWM_DMAC		(0x08/4)
 #define PWM_RNG1		(0x10/4)
 #define PWM_FIFO		(0x18/4)
@@ -283,14 +284,25 @@ int init_module(void)
 	// Point last cb back to first one so it loops continuously
 	ctl->cb[NUM_SERVOS*4-1].next = (uint32_t)(ctl->cb) & 0x7fffffff;
 
-	// Initialise PWM
+	// Initialise PWM - these delays may not all be necessary, but at least
+	// I seem to be able to switch between PWM audio and servoblaster
+	// reliably with this code.
 	pwm_reg[PWM_CTL] = 0;
 	udelay(10);
-	clk_reg[PWMCLK_DIV] = 0x5A000000 | (32<<12);    // set pwm div to 32 (19.2MHz/32 = 600KHz)
-	clk_reg[PWMCLK_CNTL] = 0x5A000011;              // Source=osc and enable
-	pwm_reg[PWM_RNG1] = tick_scale;							// 600KHz/6 = 10us per FIFO write
+	pwm_reg[PWM_STA] = pwm_reg[PWM_STA];
 	udelay(10);
-	ctl->pwmdata = 1;								// Give a pulse of one clock width for each fifo write
+	clk_reg[PWMCLK_CNTL] = 0x5A000000;
+	clk_reg[PWMCLK_DIV] = 0x5A000000;
+	clk_reg[PWMCLK_CNTL] = 0x5A000001;              // Source=osc
+	clk_reg[PWMCLK_DIV] = 0x5A000000 | (32<<12);    // set pwm div to 32 (19.2MHz/32 = 600KHz)
+	udelay(500);					// Delay needed before enabling
+	clk_reg[PWMCLK_CNTL] = 0x5A000011;              // Source=osc and enable
+
+	udelay(500);
+
+	pwm_reg[PWM_RNG1] = tick_scale;				// 600KHz/6 = 10us per FIFO write
+	udelay(10);
+	ctl->pwmdata = 1;					// Give a pulse of one clock width for each fifo write
 	pwm_reg[PWM_DMAC] = PWMDMAC_ENAB | PWMDMAC_THRSHLD;
 	udelay(10);
 	pwm_reg[PWM_CTL] = PWMCTL_CLRF;
@@ -304,6 +316,7 @@ int init_module(void)
 	dma_reg[DMA_CS] = BCM2708_DMA_INT | BCM2708_DMA_END;
 	dma_reg[DMA_CONBLK_AD] = (uint32_t)(ctl->cb) & 0x7fffffff;
 	dma_reg[DMA_DEBUG] = 7; // clear debug error flags
+	udelay(10);
 	dma_reg[DMA_CS] = 0x10880001;	// go, mid priority, wait for outstanding writes
 
 	return 0;
