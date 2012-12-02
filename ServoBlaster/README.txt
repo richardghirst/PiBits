@@ -103,6 +103,11 @@ protect against other code using those peripherals.  It sets the relevant GPIO
 pins to be outputs when the driver is loaded, so please ensure that you are not
 driving those pins externally.
 
+ServoBlaster currently uses the PWM hardware for timing purposes, so cannot be
+used at the same time as PWM audio on the 3.5mm jack, and if you play PWM audio
+after loading servoblaster.ko, you'll need to unload and reload servoblaster.ko
+in order to recover.
+
 I would of course recommend some buffering between the GPIO outputs and the
 servo controls, to protect the Pi.  That said, I'm living dangerously and doing
 without :-)  If you just want to experiment with a small servo you can probably
