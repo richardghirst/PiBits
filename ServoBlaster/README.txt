@@ -27,14 +27,14 @@ is currently set.  For example, after starting the driver and running the
 previous command, you would see:
 
 pi@raspberrypi ~ $ cat /dev/servoblaster
-0=0
-1=0
-2=0
-3=120
-4=0
-5=0
-6=0
-7=0
+0 0
+1 0
+2 0
+3 120
+4 0
+5 0
+6 0
+7 0
 pi@raspberrypi ~ $ 
 
 When the driver is first loaded the GPIO pins are configure to be outputs, and
@@ -83,30 +83,10 @@ directory will also create the necessary files.  Further to this, running
 "make install_autostart" will create those files, plus perform the necessary
 changes to make servoblaster be automatically loaded at boot.
 
-Note that there are three different ways of referring to a specific servo
-control pin: by servo number, by GPIO pin on the processor, or by pin number
-on the P1 header on the Pi itself.  The following table shows the mapping
-between these number schemes:
-
-                 Servo    GPIO number     P1 Pin
-                   0           4             7  
-                   1          17            11  
-                   2          18            12  
-                   3          21            13  
-                   4          22            15  
-                   5          23            16  
-                   6          24            18  
-                   7          25            22  
-
 The driver uses DMA channel 0, and PWM channel 1.  It makes no attempt to
 protect against other code using those peripherals.  It sets the relevant GPIO
 pins to be outputs when the driver is loaded, so please ensure that you are not
 driving those pins externally.
-
-ServoBlaster currently uses the PWM hardware for timing purposes, so cannot be
-used at the same time as PWM audio on the 3.5mm jack, and if you play PWM audio
-after loading servoblaster.ko, you'll need to unload and reload servoblaster.ko
-in order to recover.
 
 I would of course recommend some buffering between the GPIO outputs and the
 servo controls, to protect the Pi.  That said, I'm living dangerously and doing
@@ -120,6 +100,21 @@ rpi-update to get the latest kernel from github, then follow the instructions
 on the wiki (http://elinux.org/RPi_Kernel_Compilation) to compile the kernel,
 then edit the servoblaster Makefile to point at your kernel tree, then build
 servoblaster.
+
+Some people have requested that a servo output turns off automatically if no
+new pulse width has been requested recently, and I've had two reports of
+servos overheating when driven for long periods of time.  To support this
+request, ServoBlaster implements an idle timeout which can be specified at
+module load time.  The value is specified in milliseconds, so if you want
+to drive your servos for 2 seconds following each new width request you would
+do this:
+
+sudo insmod ./servoblaster.ko idle_timeout=2000
+
+Typical small servos take a few 100 milliseconds to rotate from one extreme
+to the other, so for small values of idle_timeout you might find the control
+pulse is turned off before your servo has reached the required position.
+idle_timeout defaults to 0, which disables the feature.
 
 NOTE: There is some doubt over how to configure the PWM clock at present.  For
 me the clock is 600KHz, which leads to a tick lenght of 10us.  However at least
@@ -150,6 +145,16 @@ outputs you want, and which outputs to use, via module parameters.
 
 As of August 30th 2012 the servoblaster.ko module is built against a 2.6.27+
 kernel source from github.
+
+
+Related projects:
+
+Ville has written a simple Qt wrapper for servoblaster, which you can find
+here: https://github.com/vranki/kittinger/blob/master/servocontrol.cpp & .h
+
+Todd wrote a nice script to provide a simple user interface to control your
+servos, see his sbcontrol.sh script here:
+http://www.raspberrypi.org/phpBB3/viewtopic.php?f=37&t=15011&start=25#p187675
 
 
 Richard Hirst <richardghirst@gmail.com>  August 2012
