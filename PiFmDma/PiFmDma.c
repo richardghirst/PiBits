@@ -36,6 +36,23 @@
  * ACCEPT NO LIABILITY OR RESPONSIBILITY FOR ANYTHING THAT HAPPENS AS A RESULT
  * OF YOU RUNNING THIS CODE.  IF IT BREAKS, YOU GET TO KEEP ALL THE PIECES.
  *
+ * NOTE ALSO:  THIS MAY BE ILLEGAL IN YOUR COUNTRY.  HERE ARE SOME COMMENTS
+ * FROM MORE KNOWLEDGEABLE PEOPLE ON THE FORUM:
+ *
+ * "Just be aware that in some countries FM broadcast and especially long
+ * distance FM broadcast could get yourself into trouble with the law, stray FM
+ * broadcasts over Airband aviation is also strictly forbidden."
+ *
+ * "A low pass filter is really really required for this as it has strong
+ * harmonics at the 3rd, 5th 7th and 9th which sit in licensed and rather
+ * essential bands, ie GSM, HAM, emergency services and others. Polluting these
+ * frequencies is immoral and dangerous, whereas "breaking in" on FM bands is
+ * just plain illegal."
+ *
+ * "Don't get caught, this GPIO use has the potential to exceed the legal
+ * limits by about 2000% with a proper aerial."
+ *
+ *
  * As for the original code, this code is released under the GPL.
  *
  * Richard Hirst <richardghirst@gmail.com>  December 2012
@@ -338,15 +355,22 @@ main(int argc, char **argv)
 	dma_reg[DMA_CS] = 0x10880001;	// go, mid priority, wait for outstanding writes
 
 	// Nearly there.. open the .wav file specified on the cmdline
-        int fp = open(argv[1], 'r');
+	fd = 0;
 
-	if (fp < 0)
-		fatal("Failed to open .wav file\n");
-        int sz = lseek(fp, 0L, SEEK_END);
-        lseek(fp, 0L, SEEK_SET);
+	if (argc > 1) {
+        	fd = open(argv[1], 'r');
 
-        short* data = (short*)malloc(sz);
-        read(fp, data, sz);
+		if (fd < 0)
+			fatal("Failed to open .wav file\n");
+	}
+
+        short data[1024];
+        int data_len = read(fd, data, sizeof(data));
+	if (data_len < 0)
+		fatal("Failed to read .wav file\n");
+	data_len /= 2;
+	if (data_len < 23)
+		fatal("Initial read of .wav file too short\n");
 
 	uint32_t last_cb = (uint32_t)ctl->cb;
 	int data_index = 22;
@@ -377,9 +401,16 @@ main(int argc, char **argv)
 					last_sample = 0;
 			}
 			free_slots -= 10;
-			// Should really wait for outstanding samples to be processed here..
-			if (++data_index >= sz/2)
-				terminate(0);
+			if (++data_index >= data_len) {
+        			data_len = read(fd, data, sizeof(data));
+				data_index = 0;
+				if (data_len < 0)
+					fatal("Error reading data: %m\n");
+				// Should really wait for outstanding samples to be processed here..
+				data_len /= 2;
+				if (data_len == 0)
+					terminate(0);
+			}
 		}
 		last_cb = (uint32_t)virtbase + last_sample * sizeof(dma_cb_t) * 2;
 	}
