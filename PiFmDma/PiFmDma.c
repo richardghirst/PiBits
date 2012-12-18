@@ -138,6 +138,12 @@
 
 #define GPFSEL0			(0x00/4)
 
+#define PLLFREQ			500000000	// PLLD is running at 500MHz
+#define CARRIERFREQ		100000000	// Carrier frequency is 100MHz
+// The deviation specifies how wide the signal is. Use 25.0 for WBFM
+// (broadcast radio) and about 3.5 for NBFM (walkie-talkie style radio)
+#define DEVIATION		25.0
+
 typedef struct {
 	uint32_t info, src, dst, length,
 		 stride, next, pad[2];
@@ -241,7 +247,7 @@ map_peripheral(uint32_t base, uint32_t len)
 int
 main(int argc, char **argv)
 {
-	int i, fd, pid;
+	int i, fd, pid, freq_ctl;
 	char pagemap_fn[64];
 
 	// Catch all signals possible - it is vital we kill the DMA engine
@@ -253,6 +259,10 @@ main(int argc, char **argv)
 		sa.sa_handler = terminate;
 		sigaction(i, &sa, NULL);
 	}
+
+	// Calculate the frequency control word
+	// The fractional part is stored in the lower 12 bits
+	freq_ctl = ((float)(PLLFREQ / CARRIERFREQ)) * ( 1 << 12 );
 		
 	dma_reg = map_peripheral(DMA_BASE, DMA_LEN);
 	pwm_reg = map_peripheral(PWM_BASE, PWM_LEN);
@@ -305,7 +315,7 @@ main(int argc, char **argv)
 	uint32_t phys_pwm_fifo_addr = 0x7e20c000 + 0x18;
 
 	for (i = 0; i < NUM_SAMPLES; i++) {
-		ctl->sample[i] = 0x5a << 24 | 5 << 12;	// Silence
+		ctl->sample[i] = 0x5a << 24 | freq_ctl;	// Silence
 		// Write a frequency sample
 		cbp->info = BCM2708_DMA_NO_WIDE_BURSTS | BCM2708_DMA_WAIT_RESP;
 		cbp->src = mem_virt_to_phys(ctl->sample + i);
@@ -387,7 +397,7 @@ main(int argc, char **argv)
 			free_slots += NUM_SAMPLES;
 
 		while (free_slots >= 10) {
-			float dval = (float)(data[data_index])/65536.0 * 25.0;
+			float dval = (float)(data[data_index])/65536.0 * DEVIATION;
 			int intval = (int)((floor)(dval));
 			int frac = (int)((dval - (float)intval) * 10.0);
 			int j;
@@ -396,7 +406,7 @@ main(int argc, char **argv)
 			// distributing the '+1's evenly across the 10 subsamples, or maybe
 			// by taking the previous and next samples in to account too.
 			for (j = 0; j < 10; j++) {
-				ctl->sample[last_sample++] = (0x5A << 24 | 5 << 12) + (frac > j ? intval + 1 : intval);
+				ctl->sample[last_sample++] = (0x5A << 24 | freq_ctl) + (frac > j ? intval + 1 : intval);
 				if (last_sample == NUM_SAMPLES)
 					last_sample = 0;
 			}
