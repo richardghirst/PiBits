@@ -1,0 +1,28 @@
+           Raspberry Pi and optical mouse ==> hand held scanner
+
+This project emulates one you can find here:
+
+http://spritesmods.com/?art=mouseeye
+
+which converts a cheap optical mouse in to a hand held scanner.
+
+It is very crude - for my mouse the scanner is 16x16 pixels and covers
+an area less that 1mm square, so you can imagine how hard it is to
+get an accurate and complete image.
+
+You could improve things by using a better quality mouse, I think, because
+this real cheap one tends to forget to report movement every now and then.
+Also, if you were in to image processing you could stitch the 16x16 pixel
+images together much more accurately than by relying solely on the movement
+reported by the mouse itself.
+
+Anyway I can across a link to the spritemod site and fancied giving a
+go.  If you want to try, then go to the spritemod site for the details
+of how to connect to the mouse sensor.  My mouse has an A2030 sensor
+which has the same interface as the ones mentioned on the spritemods
+page.
+
+
+Richard Hirst, January 2013
+
+
