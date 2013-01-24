@@ -1,10 +1,10 @@
                                 ServoBlaster
 
-This is a Linux kernel driver for the RaspberryPi, which provides an interface
-to drive multiple servos via the GPIO pins.   You control the servo postions by
-sending commands to the driver saying what pulse width a particular servo
-output should use.  The driver maintains that pulse width until you send a new
-command requesting some other width.
+This is software for the RaspberryPi, which provides an interface to drive
+multiple servos via the GPIO pins.   You control the servo postions by sending
+commands to the driver saying what pulse width a particular servo output should
+use.  The driver maintains that pulse width until you send a new command
+requesting some other width.
 
 Currently is it configured to drive 8 servos.  Servos typically need an active
 high pulse of somewhere between 0.5ms and 2.5ms, where the pulse width controls
@@ -22,20 +22,21 @@ echo 3=120 > /dev/servoblaster
 
 120 is in units of 10us, so that is 1200us, or 1.2ms.
 
-Upon reading, the device file provides feedback as to what position each servo
-is currently set.  For example, after starting the driver and running the
-previous command, you would see:
+If you set a servo width to 0 it turns off the servo output, without changing
+the current servo position.
 
-pi@raspberrypi ~ $ cat /dev/servoblaster
-0 0
-1 0
-2 0
-3 120
-4 0
-5 0
-6 0
-7 0
-pi@raspberrypi ~ $ 
+The code supports 8 servos, the control signals of which should be connected
+to P1 header pins as follows:
+
+     Servo number    GPIO number   Pin in P1 header
+          0               4             P1-7
+          1              17             P1-11
+          2              18             P1-12
+          3              21             P1-13
+          4              22             P1-15
+          5              23             P1-16
+          6              24             P1-18
+          7              25             P1-22
 
 When the driver is first loaded the GPIO pins are configure to be outputs, and
 their pulse widths are set to 0.  This is so that servos don't jump to some
@@ -75,14 +76,6 @@ card use.  This is expected, because the pulse generation is effectively
 handled in hardware and not influenced by interrupt latency or scheduling
 effects.
 
-Please read the driver source for more details, such as which GPIO pin maps to
-which servo number.  The comments at the top of servoblaster.c also explain how
-to make your system create the /dev/servoblaster device node automatically when
-the driver is loaded.  Alternatively running "make install" in the driver source
-directory will also create the necessary files.  Further to this, running
-"make install_autostart" will create those files, plus perform the necessary
-changes to make servoblaster be automatically loaded at boot.
-
 The driver uses DMA channel 0, and PWM channel 1.  It makes no attempt to
 protect against other code using those peripherals.  It sets the relevant GPIO
 pins to be outputs when the driver is loaded, so please ensure that you are not
@@ -94,6 +87,74 @@ without :-)  If you just want to experiment with a small servo you can probably
 take the 5 volts for it from the header pins on the Pi, but I find that doing
 anything non-trivial with four servos connected pulls the 5 volts down far
 enough to crash the Pi!
+
+
+
+There are two implementions of ServoBlaster; a kernel module based one, and
+a user space daemon.  The kernel module based one is the original, and is
+more mature.  The user space daemon implementation is much more convenient to
+use but is less well tested and does not have all the features of the kernel
+based one.  I would recommend you try the user space implementation first, as
+it is likely to be easier to get going.
+
+Details specific to each implementation are provided in separate sections
+below.
+
+
+The user space daemon
+---------------------
+
+To use this daemon grab the servod.c source and Makefile and:
+
+$ make servod
+$ sudo ./servod
+Number of servos:        8
+Servo cycle time:    20000us
+Pulse width units:      10us
+Maximum width value:   249 (2490us)
+$
+
+The prompt will return immediately, and servod is left running in the
+background.  You can check it is running via the "ps ax" command.
+If you want to stop servod, the easiest way is to run:
+
+$ sudo killall servod
+
+
+Features not currently supported in the user space implementation:
+
+- does not support the timeout= option to turn off servo outputs after
+  some specified delay.  You must set a servo width to 0 to turn off an
+  output, if you want to.
+- you cannot read /dev/servoblaster to see the current servo settings
+
+
+
+The kernel space implementation
+-------------------------------
+
+Upon reading /dev/servoblaster, the device file provides feedback as to what
+position each servo is currently set.  For example, after starting the driver
+and sending the command "3=120", you would see:
+
+pi@raspberrypi ~ $ cat /dev/servoblaster
+0 0
+1 0
+2 0
+3 120
+4 0
+5 0
+6 0
+7 0
+pi@raspberrypi ~ $ 
+
+Please read the driver source for more details.  The comments at the top of
+servoblaster.c also explain how to make your system create the
+/dev/servoblaster device node automatically when the driver is loaded.
+Alternatively running "make install" in the driver source directory will also
+create the necessary files.  Further to this, running "make install_autostart"
+will create those files, plus perform the necessary changes to make
+servoblaster be automatically loaded at boot.
 
 If you wish to compile the module yourself, the approach I took was to run
 rpi-update to get the latest kernel from github, then follow the instructions
@@ -157,5 +218,5 @@ servos, see his sbcontrol.sh script here:
 http://www.raspberrypi.org/phpBB3/viewtopic.php?f=37&t=15011&start=25#p187675
 
 
-Richard Hirst <richardghirst@gmail.com>  August 2012
+Richard Hirst <richardghirst@gmail.com>  January 2013
 

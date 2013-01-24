@@ -4,7 +4,7 @@ INSTALL_PATH := /lib/modules/$(shell /bin/uname -r)/kernel/drivers/misc/servobla
 CROSS_OPTS :=
 
 .PHONY: all install install_autostart
-all:	servoblaster.ko
+all:	servod servoblaster.ko
 
 servoblaster.ko:	servoblaster.c servoblaster.h
 	@[ -d ${KERNEL_TREE} ] || { echo "Edit Makefile to set KERNEL_TREE to point at your kernel"; exit 1; }
@@ -13,6 +13,9 @@ servoblaster.ko:	servoblaster.c servoblaster.h
 
 servodemo:	servodemo.c servoblaster.h
 	gcc -Wall -g -O2 -o servodemo servodemo.c -Wl,--export-dynamic `pkg-config --cflags gtk+-3.0 gmodule-export-2.0` `pkg-config --libs gtk+-3.0 gmodule-export-2.0`
+
+servod:	servod.c
+	gcc -Wall -g -O2 -o servod servod.c
 
 install: servoblaster.ko
 	@sudo cp $(PWD)/udev_scripts/servoblaster /lib/udev
@@ -33,5 +36,5 @@ install_autostart: install
 
 clean:
 	make -C ${KERNEL_TREE} ${CROSS_OPTS} M=$(PWD) clean
-	rm -f servodemo
+	rm -f servod servodemo
 
