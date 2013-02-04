@@ -53,6 +53,11 @@ delay to take us to the end of that timeslot before the next servo output is
 set high.  This way there is only ever one servo output active at a time, which
 helps keep the code simple.
 
+In the following description it refers to using the PWM peripheral.  For the
+user space implementation it can instead use the PCM peripheral, see below
+for details.  Using PCM is typically a better option, as the 3.5mm jack also
+uses the PWM peripheral, so ServoBlaster can interfere with sound output.
+
 The driver works by setting up a linked list of DMA control blocks with the
 last one linked back to the first, so once initialized the DMA controller
 cycles round continuously and the driver does not need to get involved except
@@ -108,6 +113,7 @@ To use this daemon grab the servod.c source and Makefile and:
 
 $ make servod
 $ sudo ./servod
+Using hardware:        PWM
 Number of servos:        8
 Servo cycle time:    20000us
 Pulse width units:      10us
@@ -120,6 +126,14 @@ If you want to stop servod, the easiest way is to run:
 
 $ sudo killall servod
 
+Note that use of PWM will interfere with 3.5mm jack audio output.  Instead
+of using the PWM hardware, you can use the PCM hardware, which is less likely
+to cause a conflict.  Please be aware that the PCM mode is very lightly tested
+at present.  To use PCM mode, invoke servod as follows:
+
+$ sudo ./servod --pcm
+Using hardware:        PCM
+...
 
 Features not currently supported in the user space implementation:
 
@@ -161,6 +175,10 @@ rpi-update to get the latest kernel from github, then follow the instructions
 on the wiki (http://elinux.org/RPi_Kernel_Compilation) to compile the kernel,
 then edit the servoblaster Makefile to point at your kernel tree, then build
 servoblaster.
+
+It is not currently possible to make the kernel implementation use the PCM
+hardware rather than the PWM hardware, therefore it will interfere with 3.5mm
+jack audio output.
 
 Some people have requested that a servo output turns off automatically if no
 new pulse width has been requested recently, and I've had two reports of

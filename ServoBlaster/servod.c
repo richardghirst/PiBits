@@ -81,6 +81,8 @@ static uint8_t servo2gpio[] = {
 #define CLK_LEN			0xA8
 #define GPIO_BASE		0x20200000
 #define GPIO_LEN		0x100
+#define PCM_BASE		0x20203000
+#define PCM_LEN			0x24
 
 #define DMA_NO_WIDE_BURSTS	(1<<26)
 #define DMA_WAIT_RESP		(1<<3)
@@ -120,6 +122,22 @@ static uint8_t servo2gpio[] = {
 #define PWMDMAC_ENAB		(1<<31)
 #define PWMDMAC_THRSHLD		((15<<8)|(15<<0))
 
+#define PCM_CS_A		(0x00/4)
+#define PCM_FIFO_A		(0x04/4)
+#define PCM_MODE_A		(0x08/4)
+#define PCM_RXC_A		(0x0c/4)
+#define PCM_TXC_A		(0x10/4)
+#define PCM_DREQ_A		(0x14/4)
+#define PCM_INTEN_A		(0x18/4)
+#define PCM_INT_STC_A		(0x1c/4)
+#define PCM_GRAY		(0x20/4)
+
+#define PCMCLK_CNTL		38
+#define PCMCLK_DIV		39
+
+#define DELAY_VIA_PWM		0
+#define DELAY_VIA_PCM		1
+
 typedef struct {
 	uint32_t info, src, dst, length,
 		 stride, next, pad[2];
@@ -140,9 +158,12 @@ page_map_t *page_map;
 static uint8_t *virtbase;
 
 static volatile uint32_t *pwm_reg;
+static volatile uint32_t *pcm_reg;
 static volatile uint32_t *clk_reg;
 static volatile uint32_t *dma_reg;
 static volatile uint32_t *gpio_reg;
+
+static int delay_hw = DELAY_VIA_PWM;
 
 static void set_servo(int servo, int width);
 
@@ -304,9 +325,14 @@ init_ctrl_data(void)
 {
 	struct ctl *ctl = (struct ctl *)virtbase;
 	dma_cb_t *cbp = ctl->cb;
-	uint32_t phys_pwm_fifo_addr = 0x7e20c000 + 0x18;
+	uint32_t phys_fifo_addr;
 	uint32_t phys_gpclr0 = 0x7e200000 + 0x28;
 	int servo, i;
+
+	if (delay_hw == DELAY_VIA_PWM)
+		phys_fifo_addr = (PWM_BASE | 0x7e000000) + 0x18;
+	else
+		phys_fifo_addr = (PCM_BASE | 0x7e000000) + 0x04;
 
 	memset(ctl->sample, 0, sizeof(ctl->sample));
 	for (servo = 0 ; servo < NUM_SERVOS; servo++) {
@@ -323,9 +349,12 @@ init_ctrl_data(void)
 		cbp->next = mem_virt_to_phys(cbp + 1);
 		cbp++;
 		// Delay
-		cbp->info = DMA_NO_WIDE_BURSTS | DMA_WAIT_RESP | DMA_D_DREQ | DMA_PER_MAP(5);
+		if (delay_hw == DELAY_VIA_PWM)
+			cbp->info = DMA_NO_WIDE_BURSTS | DMA_WAIT_RESP | DMA_D_DREQ | DMA_PER_MAP(5);
+		else
+			cbp->info = DMA_NO_WIDE_BURSTS | DMA_WAIT_RESP | DMA_D_DREQ | DMA_PER_MAP(2);
 		cbp->src = mem_virt_to_phys(ctl);	// Any data will do
-		cbp->dst = phys_pwm_fifo_addr;
+		cbp->dst = phys_fifo_addr;
 		cbp->length = 4;
 		cbp->stride = 0;
 		cbp->next = mem_virt_to_phys(cbp + 1);
@@ -340,23 +369,45 @@ init_hardware(void)
 {
 	struct ctl *ctl = (struct ctl *)virtbase;
 
-	// Initialise PWM
-	pwm_reg[PWM_CTL] = 0;
-	udelay(10);
-	clk_reg[PWMCLK_CNTL] = 0x5A000006;		// Source=PLLD (500MHz)
-	udelay(100);
-	clk_reg[PWMCLK_DIV] = 0x5A000000 | (50<<12);	// set pwm div to 50, giving 10MHz
-	udelay(100);
-	clk_reg[PWMCLK_CNTL] = 0x5A000016;		// Source=PLLD and enable
-	udelay(100);
-	pwm_reg[PWM_RNG1] = SAMPLE_US * 10;
-	udelay(10);
-	pwm_reg[PWM_DMAC] = PWMDMAC_ENAB | PWMDMAC_THRSHLD;
-	udelay(10);
-	pwm_reg[PWM_CTL] = PWMCTL_CLRF;
-	udelay(10);
-	pwm_reg[PWM_CTL] = PWMCTL_USEF1 | PWMCTL_PWEN1;
-	udelay(10);
+	if (delay_hw == DELAY_VIA_PWM) {
+		// Initialise PWM
+		pwm_reg[PWM_CTL] = 0;
+		udelay(10);
+		clk_reg[PWMCLK_CNTL] = 0x5A000006;		// Source=PLLD (500MHz)
+		udelay(100);
+		clk_reg[PWMCLK_DIV] = 0x5A000000 | (50<<12);	// set pwm div to 50, giving 10MHz
+		udelay(100);
+		clk_reg[PWMCLK_CNTL] = 0x5A000016;		// Source=PLLD and enable
+		udelay(100);
+		pwm_reg[PWM_RNG1] = SAMPLE_US * 10;
+		udelay(10);
+		pwm_reg[PWM_DMAC] = PWMDMAC_ENAB | PWMDMAC_THRSHLD;
+		udelay(10);
+		pwm_reg[PWM_CTL] = PWMCTL_CLRF;
+		udelay(10);
+		pwm_reg[PWM_CTL] = PWMCTL_USEF1 | PWMCTL_PWEN1;
+		udelay(10);
+	} else {
+		// Initialise PCM
+		pcm_reg[PCM_CS_A] = 1;				// Disable Rx+Tx, Enable PCM block
+		udelay(100);
+		clk_reg[PCMCLK_CNTL] = 0x5A000006;		// Source=PLLD (500MHz)
+		udelay(100);
+		clk_reg[PCMCLK_DIV] = 0x5A000000 | (50<<12);	// Set pcm div to 50, giving 10MHz
+		udelay(100);
+		clk_reg[PCMCLK_CNTL] = 0x5A000016;		// Source=PLLD and enable
+		udelay(100);
+		pcm_reg[PCM_TXC_A] = 0<<31 | 1<<30 | 0<<20 | 0<<16; // 1 channel, 8 bits
+		udelay(100);
+		pcm_reg[PCM_MODE_A] = (SAMPLE_US * 10 - 1) << 10;
+		udelay(100);
+		pcm_reg[PCM_CS_A] |= 1<<4 | 1<<3;		// Clear FIFOs
+		udelay(100);
+		pcm_reg[PCM_DREQ_A] = 64<<24 | 64<<8;		// DMA Req when one slot is free?
+		udelay(100);
+		pcm_reg[PCM_CS_A] |= 1<<9;			// Enable DMA
+		udelay(100);
+	}
 
 	// Initialise the DMA
 	dma_reg[DMA_CS] = DMA_RESET;
@@ -365,6 +416,10 @@ init_hardware(void)
 	dma_reg[DMA_CONBLK_AD] = mem_virt_to_phys(ctl->cb);
 	dma_reg[DMA_DEBUG] = 7; // clear debug error flags
 	dma_reg[DMA_CS] = 0x10880001;	// go, mid priority, wait for outstanding writes
+
+	if (delay_hw == DELAY_VIA_PCM) {
+		pcm_reg[PCM_CS_A] |= 1<<2;			// Enable Tx
+	}
 }
 
 static void
@@ -402,6 +457,11 @@ main(int argc, char **argv)
 {
 	int i;
 
+	// Very crude...
+	if (argc == 2 && !strcmp(argv[1], "--pcm"))
+		delay_hw = DELAY_VIA_PCM;
+
+	printf("Using hardware:      %5s\n", delay_hw == DELAY_VIA_PWM ? "PWM" : "PCM");
 	printf("Number of servos:    %5d\n", NUM_SERVOS);
 	printf("Servo cycle time:    %5dus\n", CYCLE_TIME_US);
 	printf("Pulse width units:   %5dus\n", SAMPLE_US);
@@ -412,6 +472,7 @@ main(int argc, char **argv)
 
 	dma_reg = map_peripheral(DMA_BASE, DMA_LEN);
 	pwm_reg = map_peripheral(PWM_BASE, PWM_LEN);
+	pcm_reg = map_peripheral(PCM_BASE, PCM_LEN);
 	clk_reg = map_peripheral(CLK_BASE, CLK_LEN);
 	gpio_reg = map_peripheral(GPIO_BASE, GPIO_LEN);
 
