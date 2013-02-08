@@ -49,15 +49,15 @@ To set the value of a PIN, you write a command to `/dev/pi-blaster` in the form 
 
 Examples:
   * To completely turn off pin0: 
-  
+
     echo "0=0" > /dev/pi-blaster
-    
+
   * To completely turn on pin1:
-  
+
     echo "1=1" > /dev/pi-blaster
-    
+
   * To set pin1 to a PWM of 20%
-  
+
     echo "1=0.2"
 
 ## How to adjust the frequency and the resolution of the PWM
