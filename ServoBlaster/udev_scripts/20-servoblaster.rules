@@ -1,1 +1,0 @@
-SUBSYSTEM=="module", DEVPATH=="/module/servoblaster", RUN+="/lib/udev/servoblaster"
