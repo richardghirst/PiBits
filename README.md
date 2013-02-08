@@ -37,24 +37,27 @@ pi-blaster creates a special file (FIFO) in `/dev/pi-blaster`. Any application o
 
 To set the value of a PIN, you write a command to `/dev/pi-blaster` in the form <channel>=<value> where <value> must be a number between 0 and 1 (included).
 
-  Channel number    GPIO number   Pin in P1 header
-       0               4             P1-7
-       1              17             P1-11
-       2              18             P1-12
-       3              21             P1-13
-       4              22             P1-15
-       5              23             P1-16
-       6              24             P1-18
-       7              25             P1-22
+    Channel number    GPIO number   Pin in P1 header
+          0               4             P1-7
+          1              17             P1-11
+          2              18             P1-12
+          3              21             P1-13
+          4              22             P1-15
+          5              23             P1-16
+          6              24             P1-18
+          7              25             P1-22
 
 Examples:
   * To completely turn off pin0: 
+  
     echo "0=0" > /dev/pi-blaster
     
   * To completely turn on pin1:
+  
     echo "1=1" > /dev/pi-blaster
     
   * To set pin1 to a PWM of 20%
+  
     echo "1=0.2"
 
 ## How to adjust the frequency and the resolution of the PWM
@@ -76,7 +79,7 @@ You can adjust those by changing a few defines at the top of the source code:
 
 If you do not neet a resolution of 1000 steps (approximately equivalent to a 10 bit DAC), then you can reduce the number of samples or increase the duration of the steps.
 
-Richard Hirst who wrote the original code recommended not going below 2us for the SAMPLE_US.
+Richard Hirst who wrote the original code recommended not going below 2us for `SAMPLE_US`.
 
 ## Warnings and other caveats
 
