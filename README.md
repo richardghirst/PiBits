@@ -84,11 +84,13 @@ Richard Hirst who wrote the original code recommended not going below 2us for `S
 ## Options
 
 To use the BCM2835's PCM peripheral instead of its PWM peripheral to time the DMA transfers, pass the option:
+
     --pcm
 
-This is useful if, for example, you are using the chip's PWM peripheral for audio, or have audio connected and running this produces strange noises on the speaker.
+This is useful if you are already using the chip's PWM peripheral, for example for audio output.
 
-To invert the pulse (off = pin HIGH, pulse is pin LOW), use:
+To invert the pulse (off = pin HIGH, pulse = pin LOW), use:
+
     --invert
 
 This can be useful for common anode LEDs or other devices that expect an active-low signal.
