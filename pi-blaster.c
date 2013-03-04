@@ -22,6 +22,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#include <getopt.h>
 #include <errno.h>
 #include <stdarg.h>
 #include <stdint.h>
@@ -505,14 +506,58 @@ go_go_go(void)
 	}
 }
 
+void
+parseargs(int argc, char **argv)
+{
+	int index;
+	int c;
+	int invalid = 0;
+
+	static struct option longopts[] =
+	{
+		{"pcm", no_argument, 0, 'p'},
+		{0, 0, 0, 0}
+	};
+
+	while (1)
+	{
+
+		index = 0;
+		c = getopt_long(argc, argv, "p", longopts, &index);
+
+		if (c == -1)
+			break;
+
+		switch (c)
+		{
+		case 0:
+			/* handle flag options (array's 3rd field non-0) */
+			break;
+
+		case 'p':
+			delay_hw = DELAY_VIA_PCM;
+			break;
+
+		case '?':
+			/* getopt_long already reported error? */
+			invalid = 1;
+
+		default:
+			invalid = 1;
+		}
+	}
+
+	if (invalid)
+		exit(-1);
+
+}
+
 int
 main(int argc, char **argv)
 {
 	int i;
 
-	// Very crude...
-	if (argc == 2 && !strcmp(argv[1], "--pcm"))
-		delay_hw = DELAY_VIA_PCM;
+	parseargs(argc, argv);
 
 	printf("Using hardware:                 %5s\n", delay_hw == DELAY_VIA_PWM ? "PWM" : "PCM");
 	printf("Number of channels:             %5d\n", NUM_CHANNELS);
