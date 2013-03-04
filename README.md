@@ -81,6 +81,18 @@ If you do not neet a resolution of 1000 steps (approximately equivalent to a 10 
 
 Richard Hirst who wrote the original code recommended not going below 2us for `SAMPLE_US`.
 
+## Options
+
+To use the BCM2835's PCM peripheral instead of its PWM peripheral to time the DMA transfers, pass the option:
+    --pcm
+
+This is useful if, for example, you are using the chip's PWM peripheral for audio, or have audio connected and running this produces strange noises on the speaker.
+
+To invert the pulse (off = pin HIGH, pulse is pin LOW), use:
+    --invert
+
+This can be useful for common anode LEDs or other devices that expect an active-low signal.
+
 ## Warnings and other caveats
 
 **All the pins will be configured as outputs. Do not plug something on an input or you might destroy it!**
@@ -91,6 +103,10 @@ There is experimental support for a PCM time-source. If you are interested, I su
 ## A practical example: high-power RGB lighting
 
 This library was developed for TBideas high power LED driver. You can read more about this project on [our blog][blog].
+
+## Contributors
+
+Pete Nelson (https://github.com/petiepooo)
 
 ## License
 
