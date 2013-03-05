@@ -34,7 +34,7 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 
-static char VERSION[] = "0.02";
+static char VERSION[] = "0.1.0";
 
 static uint8_t pin2gpio[] = {
 	4,	// P1-7
