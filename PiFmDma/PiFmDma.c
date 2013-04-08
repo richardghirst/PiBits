@@ -139,12 +139,10 @@
 #define GPFSEL0			(0x00/4)
 
 #define PLLFREQ			500000000	// PLLD is running at 500MHz
-//#define CARRIERFREQ		100000000	// Carrier frequency is 100MHz
+#define CARRIERFREQ		100000000	// Carrier frequency is 100MHz
 // The deviation specifies how wide the signal is. Use 25.0 for WBFM
 // (broadcast radio) and about 3.5 for NBFM (walkie-talkie style radio)
-//#define DEVIATION		25.0
-#define CARRIERFREQ		7040000	// Carrier frequency is 100MHz
-#define DEVIATION	 140.0	
+#define DEVIATION		25.0
 
 typedef struct {
 	uint32_t info, src, dst, length,
