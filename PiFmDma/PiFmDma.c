@@ -139,10 +139,12 @@
 #define GPFSEL0			(0x00/4)
 
 #define PLLFREQ			500000000	// PLLD is running at 500MHz
-#define CARRIERFREQ		100000000	// Carrier frequency is 100MHz
+//#define CARRIERFREQ		100000000	// Carrier frequency is 100MHz
 // The deviation specifies how wide the signal is. Use 25.0 for WBFM
 // (broadcast radio) and about 3.5 for NBFM (walkie-talkie style radio)
-#define DEVIATION		25.0
+//#define DEVIATION		25.0
+#define CARRIERFREQ		7040000	// Carrier frequency is 100MHz
+#define DEVIATION	 140.0	
 
 typedef struct {
 	uint32_t info, src, dst, length,
@@ -285,7 +287,7 @@ main(int argc, char **argv)
 	fd = open(pagemap_fn, O_RDONLY);
 	if (fd < 0)
 		fatal("Failed to open %s: %m\n", pagemap_fn);
-	if (lseek(fd, (off_t)virtbase >> 9, SEEK_SET) != (off_t)virtbase >> 9)
+	if (lseek(fd, (unsigned long)virtbase >> 9, SEEK_SET) != (unsigned long)virtbase >> 9)
 		fatal("Failed to seek on %s: %m\n", pagemap_fn);
 //	printf("Page map:\n");
 	for (i = 0; i < NUM_PAGES; i++) {
@@ -295,7 +297,7 @@ main(int argc, char **argv)
 		page_map[i].virtaddr[0] = 0;
 		if (read(fd, &pfn, sizeof(pfn)) != sizeof(pfn))
 			fatal("Failed to read %s: %m\n", pagemap_fn);
-		if (pfn >> 55 != 0x10c)
+		if ((pfn >> 55)&0xfbf != 0x10c)  // pagemap bits: https://www.kernel.org/doc/Documentation/vm/pagemap.txt
 			fatal("Page %d not present (pfn 0x%016llx)\n", i, pfn);
 		page_map[i].physaddr = (uint32_t)pfn << PAGE_SHIFT | 0x40000000;
 //		printf("  %2d: %8p ==> 0x%08x [0x%016llx]\n", i, page_map[i].virtaddr, page_map[i].physaddr, pfn);
