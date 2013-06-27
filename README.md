@@ -35,7 +35,7 @@ pi-blaster creates a special file (FIFO) in `/dev/pi-blaster`. Any application o
 
 **Important: when using pi-blaster, all the GPIO pins are configured as output.**
 
-To set the value of a PIN, you write a command to `/dev/pi-blaster` in the form <channel>=<value> where <value> must be a number between 0 and 1 (included).
+To set the value of a PIN, you write a command to `/dev/pi-blaster` in the form `<channel>=<value>` where `<value>` must be a number between 0 and 1 (included).
 
     Channel number    GPIO number   Pin in P1 header
           0               4             P1-7
@@ -58,7 +58,7 @@ Examples:
 
   * To set pin1 to a PWM of 20%
 
-    echo "1=0.2"
+    echo "1=0.2" > /dev/pi-blaster
 
 ### NodeJS Library
 
@@ -89,6 +89,26 @@ If you do not neet a resolution of 1000 steps (approximately equivalent to a 10 
 
 Richard Hirst who wrote the original code recommended not going below 2us for `SAMPLE_US`.
 
+## Options
+
+To use the BCM2835's PCM peripheral instead of its PWM peripheral to time the DMA transfers, pass the option:
+
+    --pcm
+
+This is useful if you are already using the chip's PWM peripheral, for example for audio output.
+
+To invert the pulse (off = pin HIGH, pulse = pin LOW), use:
+
+    --invert
+
+This can be useful for common anode LEDs or other devices that expect an active-low signal.
+
+To view help or version information, use:
+
+    --help
+
+    --version
+
 ## Warnings and other caveats
 
 **All the pins will be configured as outputs. Do not plug something on an input or you might destroy it!**
@@ -99,6 +119,10 @@ There is experimental support for a PCM time-source. If you are interested, I su
 ## A practical example: high-power RGB lighting
 
 This library was developed for TBideas high power LED driver. You can read more about this project on [our blog][blog].
+
+## Contributors
+
+Pete Nelson (https://github.com/petiepooo)
 
 ## License
 
