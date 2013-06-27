@@ -33,7 +33,7 @@ This will stop pi-blaster and prevent it from starting automatically on the next
 
 pi-blaster creates a special file (FIFO) in `/dev/pi-blaster`. Any application on your Raspberry Pi can write to it (this means that only pi-blaster needs to be root, your application can run as a normal user).
 
-**Important: when using pi-blaster, all the pins are configured as output.**
+**Important: when using pi-blaster, all the GPIO pins are configured as output.**
 
 To set the value of a PIN, you write a command to `/dev/pi-blaster` in the form <channel>=<value> where <value> must be a number between 0 and 1 (included).
 
@@ -59,6 +59,14 @@ Examples:
   * To set pin1 to a PWM of 20%
 
     echo "1=0.2"
+
+### NodeJS Library
+
+NodeJS users can use [pi-blaster.js](https://github.com/sarfata/pi-blaster.js).
+
+### C#
+
+A C# example was contributed by [Vili Volcini](https://plus.google.com/109312219443477679717/posts). It is available on [this stackoverflow thread](http://stackoverflow.com/questions/17241071/writing-to-fifo-file-linux-monoc).
 
 ## How to adjust the frequency and the resolution of the PWM
 
