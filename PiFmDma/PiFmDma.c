@@ -295,7 +295,7 @@ main(int argc, char **argv)
 		page_map[i].virtaddr[0] = 0;
 		if (read(fd, &pfn, sizeof(pfn)) != sizeof(pfn))
 			fatal("Failed to read %s: %m\n", pagemap_fn);
-		if ((pfn >> 55)&0xfbf != 0x10c)  // pagemap bits: https://www.kernel.org/doc/Documentation/vm/pagemap.txt
+		if (((pfn >> 55)&0xfbf) != 0x10c)  // pagemap bits: https://www.kernel.org/doc/Documentation/vm/pagemap.txt
 			fatal("Page %d not present (pfn 0x%016llx)\n", i, pfn);
 		page_map[i].physaddr = (uint32_t)pfn << PAGE_SHIFT | 0x40000000;
 //		printf("  %2d: %8p ==> 0x%08x [0x%016llx]\n", i, page_map[i].virtaddr, page_map[i].physaddr, pfn);
