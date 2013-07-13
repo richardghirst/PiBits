@@ -368,7 +368,7 @@ main(int argc, char **argv)
 	fd = 0;
 
 	if (argc > 1) {
-        	fd = open(argv[1], 'r');
+		fd = open(argv[1], O_RDONLY);
 
 		if (fd < 0)
 			fatal("Failed to open .wav file\n");
