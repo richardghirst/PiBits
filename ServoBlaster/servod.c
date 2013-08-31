@@ -39,7 +39,8 @@ static uint8_t servo2gpio[] = {
 	4,	// P1-7
 	17,	// P1-11
 	18,	// P1-12
-	21,	// P1-13
+	// pin 21 connflicts with raspberry camera if used:
+	//21,	// P1-13
 	22,	// P1-15
 	23,	// P1-16
 	24,	// P1-18
