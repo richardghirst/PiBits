@@ -107,6 +107,12 @@ static struct file_operations fops =
 	.compat_ioctl = dev_ioctl,
 };
 
+// Define REV_1 or REV_2 depending on whcih rev of Pi you have.  Alternatively
+// just don't try to use P1-13.
+
+//#define REV_1
+//#define REV_2
+
 // Map servo channels to GPIO pins
 static uint8_t servo2gpio[] = {
 		4,	// P1-7
@@ -116,7 +122,13 @@ static uint8_t servo2gpio[] = {
 #else
 		18,	// P1-12
 #endif
+#if defined(REV_1)
 		21,	// P1-13
+#elif defined(REV_2)
+		27,	// P1-13
+#else
+  #error "You must define REV_1 or REV_2"
+#endif
 		22,	// P1-15
 		23,	// P1-16
 		24,	// P1-18

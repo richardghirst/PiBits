@@ -1,0 +1,41 @@
+#!/bin/sh
+### BEGIN INIT INFO
+# Provides:          servoblaster
+# Required-Start:    hostname $local_fs
+# Required-Stop:
+# Should-Start:
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: Start/stop servod.
+# Description:       This script starts/stops servod.
+### END INIT INFO
+
+PATH=/sbin:/usr/sbin:/bin:/usr/bin
+. /lib/init/vars.sh
+
+OPTS="--idle-timeout=2000"
+
+res=0
+
+case "$1" in
+  start)
+	/usr/local/sbin/servod $OPTS >/dev/null
+	;;
+  restart|reload|force-reload)
+	killall servod
+	/usr/local/sbin/servod $OPTS >/dev/null
+	;;
+  stop)
+	killall servod
+	;;
+  status)
+	[ -e /dev/servoblaster ] || res=4
+	;;
+  *)
+	echo "Usage: servoblaster [start|stop|status]" >&2
+	res=3
+	;;
+esac
+
+exit $res
+

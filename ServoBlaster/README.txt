@@ -32,11 +32,13 @@ to P1 header pins as follows:
           0               4             P1-7
           1              17             P1-11
           2              18             P1-12
-          3              21             P1-13
+          3             21/27           P1-13
           4              22             P1-15
           5              23             P1-16
           6              24             P1-18
           7              25             P1-22
+
+P1-13 is connected to either GPIO-21 or GPIO-27, depending on board revision.
 
 When the driver is first loaded the GPIO pins are configure to be outputs, and
 their pulse widths are set to 0.  This is so that servos don't jump to some
@@ -95,12 +97,15 @@ enough to crash the Pi!
 
 
 
-There are two implementions of ServoBlaster; a kernel module based one, and
-a user space daemon.  The kernel module based one is the original, and is
-more mature.  The user space daemon implementation is much more convenient to
-use but is less well tested and does not have all the features of the kernel
-based one.  I would recommend you try the user space implementation first, as
-it is likely to be easier to get going.
+There are two implementions of ServoBlaster; a kernel module based one, and a
+user space daemon.  The kernel module based one is the original, but is more of
+a pain to build because you need a matching kernel build.  The user space
+daemon implementation is much more convenient to use but does not have all the
+features of the kernel based one.  I would recommend you try the user space
+implementation first, as it is likely to be easier to get going.
+
+The kernel module implementation is in the subdirectory 'kernel', while the
+user space implementation can be found in subdirectory 'user'.
 
 Details specific to each implementation are provided in separate sections
 below.
@@ -135,17 +140,36 @@ $ sudo ./servod --pcm
 Using hardware:        PCM
 ...
 
-Features not currently supported in the user space implementation:
+Some people have requested that a servo output turns off automatically if no
+new pulse width has been requested recently, and I've had two reports of
+servos overheating when driven for long periods of time.  To support this
+request, servod implements an idle timeout which can be specified at
+module load time.  The value is specified in milliseconds, so if you want
+to drive your servos for 2 seconds following each new width request you would
+do this:
 
-- does not support the timeout= option to turn off servo outputs after
-  some specified delay.  You must set a servo width to 0 to turn off an
-  output, if you want to.
-- you cannot read /dev/servoblaster to see the current servo settings
+$ sudo ./servod --idle-timeout=2000
+
+Typical small servos take a few 100 milliseconds to rotate from one extreme
+to the other, so for small values of idle_timeout you might find the control
+pulse is turned off before your servo has reached the required position.
+idle_timeout defaults to 0, which disables the feature.
+
+If you want servod to start automatically when the system boots, then you
+can install it along with a startup script as follows:
+
+$ sudo make install
+
+You may wish to edit /etc/init.d/servoblaster to change the parameters that are
+specified in that script (e.g.  the idle-timeout, which is set to 2 seconds).
 
 
 
 The kernel space implementation
 -------------------------------
+
+Please note that the user space implementation is the preferred one to use and
+the kernel implementation (servoblaster.ko) has been depreciated.
 
 Upon reading /dev/servoblaster, the device file provides feedback as to what
 position each servo is currently set.  For example, after starting the driver
@@ -175,6 +199,10 @@ rpi-update to get the latest kernel from github, then follow the instructions
 on the wiki (http://elinux.org/RPi_Kernel_Compilation) to compile the kernel,
 then edit the servoblaster Makefile to point at your kernel tree, then build
 servoblaster.
+
+As the mapping of GPIO to P1 header pins changed between Rev 1 and Rev 2
+boards, you will need to modify servoblaster.c approriately for your board.
+Please uncomment the define for REV_1 or REV_2 as appropriate.
 
 It is not currently possible to make the kernel implementation use the PCM
 hardware rather than the PWM hardware, therefore it will interfere with 3.5mm

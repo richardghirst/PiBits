@@ -3,19 +3,13 @@ INSTALL_PATH := /lib/modules/$(shell /bin/uname -r)/kernel/drivers/misc/servobla
 #CROSS_OPTS := CROSS_COMPILE=/usr/bin/arm-linux-gnueabi- ARCH=arm
 CROSS_OPTS :=
 
-.PHONY: all install install_autostart
-all:	servod servoblaster.ko
+.PHONY: all install install_autostart uninstall
+all:	servoblaster.ko
 
 servoblaster.ko:	servoblaster.c servoblaster.h
 	@[ -d ${KERNEL_TREE} ] || { echo "Edit Makefile to set KERNEL_TREE to point at your kernel"; exit 1; }
 	@[ -e ${KERNEL_TREE}/Module.symvers ] || { echo "KERNEL_TREE/Module.symvers does not exist, you need to configure and compile your kernel"; exit 1; }
 	make -C ${KERNEL_TREE} ${CROSS_OPTS} M=$(PWD) modules
-
-servodemo:	servodemo.c servoblaster.h
-	gcc -Wall -g -O2 -o servodemo servodemo.c -Wl,--export-dynamic `pkg-config --cflags gtk+-3.0 gmodule-export-2.0` `pkg-config --libs gtk+-3.0 gmodule-export-2.0`
-
-servod:	servod.c
-	gcc -Wall -g -O2 -o servod servod.c
 
 install: servoblaster.ko
 	@sudo cp $(PWD)/udev_scripts/servoblaster /lib/udev
@@ -34,7 +28,13 @@ install_autostart: install
 	@echo "	modprobe servoblaster"
 	@echo "	modprobe -r servoblaster"
 
+uninstall:
+	@modprobe -r servoblaster
+	@sudo rm -f /lib/udev/servoblaster
+	@sudo rm -f /etc/udev/rules.d/20-servoblaster.rules
+	@sudo rm -f $(INSTALL_PATH)/servoblaster.ko
+	@sudo depmod -a
+	
 clean:
 	make -C ${KERNEL_TREE} ${CROSS_OPTS} M=$(PWD) clean
-	rm -f servod servodemo
 

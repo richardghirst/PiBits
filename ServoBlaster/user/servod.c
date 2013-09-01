@@ -34,8 +34,15 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <sys/mman.h>
+#include <getopt.h>
 
-static uint8_t servo2gpio[] = {
+/* Define which GPIOs/P1-pins to use slightly differently for Rev 1 and
+ * Rev 2 boards, as P1-13 is different.  On Rev 1 GPIO 27 was used for
+ * camera control and GPIO-21 was routed to P1-13, but on Rev 2 it is the
+ * other way round.
+ */
+
+static uint8_t servo2gpio_rev1[] = {
 	4,	// P1-7
 	17,	// P1-11
 	18,	// P1-12
@@ -46,7 +53,19 @@ static uint8_t servo2gpio[] = {
 	25,	// P1-22
 };
 
-#define NUM_SERVOS		(sizeof(servo2gpio)/sizeof(servo2gpio[0]))
+static uint8_t servo2gpio_rev2[] = {
+	4,	// P1-7
+	17,	// P1-11
+	18,	// P1-12
+	27,	// P1-13
+	22,	// P1-15
+	23,	// P1-16
+	24,	// P1-18
+	25,	// P1-22
+};
+
+static uint8_t *servo2gpio;
+static int num_servos;
 
 #define DEVFILE			"/dev/servoblaster"
 
@@ -63,7 +82,7 @@ static uint8_t servo2gpio[] = {
 
 #define CYCLE_TIME_US		20000
 #define SAMPLE_US		10
-#define SERVO_TIME_US		(CYCLE_TIME_US/NUM_SERVOS)
+#define SERVO_TIME_US		(CYCLE_TIME_US/num_servos)
 #define SERVO_SAMPLES		(SERVO_TIME_US/SAMPLE_US)
 #define SERVO_MIN		0
 #define SERVO_MAX		(SERVO_SAMPLES - 1)
@@ -165,26 +184,11 @@ static volatile uint32_t *gpio_reg;
 
 static int delay_hw = DELAY_VIA_PWM;
 
+static struct timeval *servo_kill_time;
+
+static int idle_timeout = 0;
+
 static void set_servo(int servo, int width);
-
-static void
-gpio_set_mode(uint32_t pin, uint32_t mode)
-{
-	uint32_t fsel = gpio_reg[GPIO_FSEL0 + pin/10];
-
-	fsel &= ~(7 << ((pin % 10) * 3));
-	fsel |= mode << ((pin % 10) * 3);
-	gpio_reg[GPIO_FSEL0 + pin/10] = fsel;
-}
-
-static void
-gpio_set(int pin, int level)
-{
-	if (level)
-		gpio_reg[GPIO_SET0] = 1 << pin;
-	else
-		gpio_reg[GPIO_CLR0] = 1 << pin;
-}
 
 static void
 udelay(int us)
@@ -200,7 +204,7 @@ terminate(int dummy)
 	int i;
 
 	if (dma_reg && virtbase) {
-		for (i = 0; i < NUM_SERVOS; i++)
+		for (i = 0; i < num_servos; i++)
 			set_servo(i, 0);
 		udelay(CYCLE_TIME_US);
 		dma_reg[DMA_CS] = DMA_RESET;
@@ -219,6 +223,78 @@ fatal(char *fmt, ...)
 	vfprintf(stderr, fmt, ap);
 	va_end(ap);
 	terminate(0);
+}
+
+static void
+init_idle_timers(void)
+{
+	servo_kill_time = calloc(num_servos, sizeof(struct timeval));
+	if (!servo_kill_time)
+		fatal("servod: calloc() failed\n");
+}
+
+static void
+update_idle_time(int servo)
+{
+	if (idle_timeout == 0)
+		return;
+
+	gettimeofday(servo_kill_time + servo, NULL);
+	servo_kill_time[servo].tv_sec += idle_timeout / 1000;
+	servo_kill_time[servo].tv_usec += (idle_timeout % 1000) * 1000;
+	while (servo_kill_time[servo].tv_usec >= 1000000) {
+		servo_kill_time[servo].tv_usec -= 1000000;
+		servo_kill_time[servo].tv_sec++;
+	}
+}
+
+static void
+get_next_idle_timeout(struct timeval *tv)
+{
+	int i;
+	struct timeval now;
+	struct timeval min = { 60, 0 };
+	long this_diff, min_diff;
+
+	gettimeofday(&now, NULL);
+	for (i = 0; i < num_servos; i++) {
+		if (servo_kill_time[i].tv_sec == 0)
+			continue;
+		else if (servo_kill_time[i].tv_sec < now.tv_sec ||
+			(servo_kill_time[i].tv_sec == now.tv_sec &&
+			 servo_kill_time[i].tv_usec <= now.tv_usec)) {
+			servo_kill_time[i].tv_sec = 0;
+			set_servo(i, 0);
+		} else {
+			this_diff = (servo_kill_time[i].tv_sec - now.tv_sec) * 1000000
+				+ servo_kill_time[i].tv_usec - now.tv_usec;
+			min_diff = min.tv_sec * 1000000 + min.tv_usec;
+			if (this_diff < min_diff) {
+				min.tv_sec = this_diff / 1000000;
+				min.tv_usec = this_diff % 1000000;
+			}
+		}
+	}
+	*tv = min;
+}
+
+static void
+gpio_set_mode(uint32_t pin, uint32_t mode)
+{
+	uint32_t fsel = gpio_reg[GPIO_FSEL0 + pin/10];
+
+	fsel &= ~(7 << ((pin % 10) * 3));
+	fsel |= mode << ((pin % 10) * 3);
+	gpio_reg[GPIO_FSEL0 + pin/10] = fsel;
+}
+
+static void
+gpio_set(int pin, int level)
+{
+	if (level)
+		gpio_reg[GPIO_SET0] = 1 << pin;
+	else
+		gpio_reg[GPIO_CLR0] = 1 << pin;
 }
 
 static uint32_t
@@ -265,6 +341,7 @@ set_servo(int servo, int width)
 			dp[i] = 0;
 		dp[0] = mask;
 		cbp->dst = phys_gpset0;
+		update_idle_time(servo);
 	}
 }
 
@@ -335,7 +412,7 @@ init_ctrl_data(void)
 		phys_fifo_addr = (PCM_BASE | 0x7e000000) + 0x04;
 
 	memset(ctl->sample, 0, sizeof(ctl->sample));
-	for (servo = 0 ; servo < NUM_SERVOS; servo++) {
+	for (servo = 0 ; servo < num_servos; servo++) {
 		for (i = 0; i < SERVO_SAMPLES; i++)
 			ctl->sample[servo * SERVO_SAMPLES + i] = 1 << servo2gpio[servo];
 	}
@@ -425,31 +502,90 @@ init_hardware(void)
 static void
 go_go_go(void)
 {
-	FILE *fp;
+	int fd;
+	struct timeval tv;
+	static char line[128];
+	int nchars = 0;
+	char nl;
 
-	if ((fp = fopen(DEVFILE, "r+")) == NULL)
+	if ((fd = open(DEVFILE, O_RDWR|O_NONBLOCK)) == -1)
 		fatal("servod: Failed to open %s: %m\n", DEVFILE);
-
-	char *lineptr = NULL, nl;
-	size_t linelen;
 
 	for (;;) {
 		int n, width, servo;
+		fd_set ifds;
 
-		if ((n = getline(&lineptr, &linelen, fp)) < 0)
+		FD_ZERO(&ifds);
+		FD_SET(fd, &ifds);
+		get_next_idle_timeout(&tv);
+		if ((n = select(fd+1, &ifds, NULL, NULL, &tv)) != 1)
 			continue;
-		//fprintf(stderr, "[%d]%s", n, lineptr);
-		n = sscanf(lineptr, "%d=%d%c", &servo, &width, &nl);
-		if (n !=3 || nl != '\n') {
-			fprintf(stderr, "Bad input: %s", lineptr);
-		} else if (servo < 0 || servo >= NUM_SERVOS) {
-			fprintf(stderr, "Invalid servo number %d\n", servo);
-		} else if (width < SERVO_MIN || width > SERVO_MAX) {
-			fprintf(stderr, "Invalid width %d\n", width);
-		} else {
-			set_servo(servo, width);
+		while (read(fd, line+nchars, 1) == 1) {
+			if (line[nchars] == '\n') {
+				line[++nchars] = '\0';
+				nchars = 0;
+				n = sscanf(line, "%d=%d%c", &servo, &width, &nl);
+				if (n !=3 || nl != '\n') {
+					fprintf(stderr, "Bad input: %s", line);
+				} else if (servo < 0 || servo >= num_servos) {
+					fprintf(stderr, "Invalid servo number %d\n", servo);
+				} else if (width < SERVO_MIN || width > SERVO_MAX) {
+					fprintf(stderr, "Invalid width %d\n", width);
+				} else {
+					set_servo(servo, width);
+				}
+			} else {
+				if (++nchars >= 126) {
+					fprintf(stderr, "Input too long\n");
+					nchars = 0;
+				}
+			}
 		}
 	}
+}
+
+/* Determining the board revision is a lot more complicated than it should be
+ * (see comments in wiringPi for details).  We will just look at the last two
+ * digits of the Revision string and treat '00' and '01' as errors, '02' and
+ * '03' as rev 1, and any other hex value as rev 2.
+ */
+static int
+board_rev(void)
+{
+	char buf[128];
+	char *ptr, *end, *res;
+	static int rev = 0;
+	FILE *fp;
+
+	if (rev)
+		return rev;
+
+	fp = fopen("/proc/cpuinfo", "r");
+
+	if (!fp)
+		fatal("Unable to open /proc/cpuinfo: %m\n");
+
+	while ((res = fgets(buf, 128, fp))) {
+		if (!strncmp(buf, "Revision", 8))
+			break;
+	}
+	fclose(fp);
+
+	if (!res)
+		fatal("servod: No 'Revision' record in /proc/cpuinfo\n");
+
+	ptr = buf + strlen(buf) - 3;
+	rev = strtol(ptr, &end, 16);
+	if (end != ptr + 2)
+		fatal("servod: Failed to parse Revision string\n");
+	if (rev < 1)
+		fatal("servod: Invalid board Revision\n");
+	else if (rev < 4)
+		rev = 1;
+	else
+		rev = 2;
+
+	return rev;
 }
 
 int
@@ -457,17 +593,60 @@ main(int argc, char **argv)
 {
 	int i;
 
-	// Very crude...
-	if (argc == 2 && !strcmp(argv[1], "--pcm"))
-		delay_hw = DELAY_VIA_PCM;
+	while (1) {
+		int c;
+		int option_index;
 
+		static struct option long_options[] = {
+			{ "pcm",          no_argument,       0, 'p' },
+			{ "idle-timeout", required_argument, 0, 't' },
+			{ "idle_timeout", required_argument, 0, 't' },
+			{ "help",         no_argument,       0, 'h' },
+			{ 0,              0,                 0, 0   }
+		};
+
+		c = getopt_long(argc, argv, "hpt:", long_options, &option_index);
+		if (c == -1) {
+			break;
+		} else if (c == 'p') {
+			delay_hw = DELAY_VIA_PCM;
+		} else if (c == 't') {
+			idle_timeout = atoi(optarg);
+			if (idle_timeout < 10 || idle_timeout > 3600000)
+				fatal("Invalid idle_timeout specified\n");
+		} else if (c == 'h') {
+			printf("\nUsage: %s [--pcm] [--idle-timeout=N]\n\n"
+				"Where:\n"
+                                "  --pcm             tells servod to use PCM rather than PWM hardware\n"
+                                "                    to implement delays\n"
+				"  --idle-timeout=N  tells servod to stop sending servo pulses for a\n"
+				"                    given output N milliseconds after the last update\n\n",
+				argv[0]);
+			exit(0);
+		} else {
+			fatal("Invalid parameter\n");
+		}
+	}
+
+	/* Select the correct pin mapping based on board rev */
+	if (board_rev() == 1) {
+		servo2gpio = servo2gpio_rev1;
+		num_servos = sizeof(servo2gpio_rev1);
+	} else {
+		servo2gpio = servo2gpio_rev2;
+		num_servos = sizeof(servo2gpio_rev2);
+	}
+
+	printf("Board revision:      %5d\n", board_rev());
 	printf("Using hardware:      %5s\n", delay_hw == DELAY_VIA_PWM ? "PWM" : "PCM");
-	printf("Number of servos:    %5d\n", NUM_SERVOS);
+	printf("Idle timeout (ms):   %5d\n", idle_timeout);
+	printf("Number of servos:    %5d\n", num_servos);
 	printf("Servo cycle time:    %5dus\n", CYCLE_TIME_US);
 	printf("Pulse width units:   %5dus\n", SAMPLE_US);
 	printf("Maximum width value: %5d (%dus)\n", SERVO_MAX,
 						SERVO_MAX * SAMPLE_US);
 
+	init_idle_timers();
 	setup_sighandlers();
 
 	dma_reg = map_peripheral(DMA_BASE, DMA_LEN);
@@ -486,7 +665,7 @@ main(int argc, char **argv)
 
 	make_pagemap();
 
-	for (i = 0; i < NUM_SERVOS; i++) {
+	for (i = 0; i < num_servos; i++) {
 		gpio_set(servo2gpio[i], 0);
 		gpio_set_mode(servo2gpio[i], GPIO_MODE_OUT);
 	}
