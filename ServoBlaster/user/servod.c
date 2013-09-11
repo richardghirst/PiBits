@@ -36,36 +36,110 @@
 #include <sys/mman.h>
 #include <getopt.h>
 
-/* Define which GPIOs/P1-pins to use slightly differently for Rev 1 and
- * Rev 2 boards, as P1-13 is different.  On Rev 1 GPIO 27 was used for
- * camera control and GPIO-21 was routed to P1-13, but on Rev 2 it is the
- * other way round.
+/* Define which P1 header pins to use by default.  These are the eight standard
+ * GPIO pins (those coloured green in the diagram on this page:
+ *    http://elinux.org/Rpi_Low-level_peripherals
+ *
+ * Which P1 header pins are actually used can be overridden via command line
+ * parameter '--p1pins=...'.
  */
 
-static uint8_t servo2gpio_rev1[] = {
-	4,	// P1-7
-	17,	// P1-11
-	18,	// P1-12
-	21,	// P1-13
-	22,	// P1-15
-	23,	// P1-16
-	24,	// P1-18
-	25,	// P1-22
+static char *default_p1_pins = "7,11,12,13,15,16,18,22";
+static char *default_p5_pins = "";
+
+#define DMY	255	// Used to represent an invalid P1 pin, or unmapped servo
+
+#define NUM_P1PINS	26
+#define NUM_P5PINS	8
+
+#define MAX_SERVOS	21	// Count of GPIO pins on P1 and P5
+
+static uint8_t rev1_p1pin2gpio_map[] = {
+	DMY,	// P1-1   3v3
+	DMY,	// P1-2   5v
+	0,	// P1-3   GPIO 0 (SDA)
+	DMY,	// P1-4   5v
+	1,	// P1-5   GPIO 1 (SCL)
+	DMY,	// P1-6   Ground
+	4,	// P1-7   GPIO 4 (GPCLK0)
+	14,	// P1-8   GPIO 14 (TXD)
+	DMY,	// P1-9   Ground
+	15,	// P1-10  GPIO 15 (RXD)
+	17,	// P1-11  GPIO 17
+	18,	// P1-12  GPIO 18 (PCM_CLK)
+	21,	// P1-13  GPIO 21
+	DMY,	// P1-14  Ground
+	22,	// P1-15  GPIO 22
+	23,	// P1-16  GPIO 23
+	DMY,	// P1-17  3v3
+	24,	// P1-18  GPIO 24
+	10,	// P1-19  GPIO 10 (MOSI)
+	DMY,	// P1-20  Ground
+	9,	// P1-21  GPIO 9 (MISO)
+	25,	// P1-22  GPIO 25
+	11,	// P1-23  GPIO 11 (SCLK)
+	8,	// P1-24  GPIO 8 (CE0)
+	DMY,	// P1-25  Ground
+	7,	// P1-26  GPIO 7 (CE1)
 };
 
-static uint8_t servo2gpio_rev2[] = {
-	4,	// P1-7
-	17,	// P1-11
-	18,	// P1-12
-	27,	// P1-13
-	22,	// P1-15
-	23,	// P1-16
-	24,	// P1-18
-	25,	// P1-22
+static uint8_t rev1_p5pin2gpio_map[] = {
+	DMY,	// (P5-1 on rev 2 boards)
+	DMY,	// (P5-2 on rev 2 boards)
+	DMY,	// (P5-3 on rev 2 boards)
+	DMY,	// (P5-4 on rev 2 boards)
+	DMY,	// (P5-5 on rev 2 boards)
+	DMY,	// (P5-6 on rev 2 boards)
+	DMY,	// (P5-7 on rev 2 boards)
+	DMY,	// (P5-8 on rev 2 boards)
 };
 
-static uint8_t *servo2gpio;
+static uint8_t rev2_p1pin2gpio_map[] = {
+	DMY,	// P1-1   3v3
+	DMY,	// P1-2   5v
+	2,	// P1-3   GPIO 2 (SDA)
+	DMY,	// P1-4   5v
+	3,	// P1-5   GPIO 3 (SCL)
+	DMY,	// P1-6   Ground
+	4,	// P1-7   GPIO 4 (GPCLK0)
+	14,	// P1-8   GPIO 14 (TXD)
+	DMY,	// P1-9   Ground
+	15,	// P1-10  GPIO 15 (RXD)
+	17,	// P1-11  GPIO 17
+	18,	// P1-12  GPIO 18 (PCM_CLK)
+	27,	// P1-13  GPIO 27
+	DMY,	// P1-14  Ground
+	22,	// P1-15  GPIO 22
+	23,	// P1-16  GPIO 23
+	DMY,	// P1-17  3v3
+	24,	// P1-18  GPIO 24
+	10,	// P1-19  GPIO 10 (MOSI)
+	DMY,	// P1-20  Ground
+	9,	// P1-21  GPIO 9 (MISO)
+	25,	// P1-22  GPIO 25
+	11,	// P1-23  GPIO 11 (SCLK)
+	8,	// P1-24  GPIO 8 (CE0)
+	DMY,	// P1-25  Ground
+	7,	// P1-26  GPIO 7 (CE1)
+};
+
+static uint8_t rev2_p5pin2gpio_map[] = {
+	DMY,	// P5-1   5v0
+	DMY,	// P5-2   3v3
+	28,	// P5-3   GPIO 28 (I2C0_SDA)
+	29,	// P5-4   GPIO 29 (I2C0_SCL)
+	30,	// P5-5   GPIO 30
+	31,	// P5-6   GPIO 31
+	DMY,	// P5-7   Ground
+	DMY,	// P5-8   Ground
+};
+
+static uint8_t servo2gpio[MAX_SERVOS];
+static int servostart[MAX_SERVOS];
+static int servowidth[MAX_SERVOS];
 static int num_servos;
+static uint32_t gpiomode[MAX_SERVOS];
+static int restore_gpio_modes;
 
 #define DEVFILE			"/dev/servoblaster"
 
@@ -82,14 +156,13 @@ static int num_servos;
 
 #define CYCLE_TIME_US		20000
 #define SAMPLE_US		10
-#define SERVO_TIME_US		(CYCLE_TIME_US/num_servos)
-#define SERVO_SAMPLES		(SERVO_TIME_US/SAMPLE_US)
-#define SERVO_MIN		0
-#define SERVO_MAX		(SERVO_SAMPLES - 1)
+#define DEFAULT_MIN		(500/SAMPLE_US)
+#define DEFAULT_MAX		(2500/SAMPLE_US)
 #define NUM_SAMPLES		(CYCLE_TIME_US/SAMPLE_US)
-#define NUM_CBS			(NUM_SAMPLES*2)
+#define NUM_CBS			(NUM_SAMPLES*2+MAX_SERVOS)
 
 #define NUM_PAGES		((NUM_CBS * 32 + NUM_SAMPLES * 4 + \
+					MAX_SERVOS * 4 + \
 					PAGE_SIZE - 1) >> PAGE_SHIFT)
 
 #define DMA_BASE		0x20007000
@@ -157,24 +230,27 @@ static int num_servos;
 #define DELAY_VIA_PWM		0
 #define DELAY_VIA_PCM		1
 
+#define ROUNDUP(val, blksz)	(((val)+((blksz)-1)) & ~(blksz-1))
+
 typedef struct {
 	uint32_t info, src, dst, length,
 		 stride, next, pad[2];
 } dma_cb_t;
 
 struct ctl {
-	uint32_t sample[NUM_SAMPLES];
+	uint32_t turnoff[NUM_SAMPLES];
+	uint32_t turnon[ROUNDUP(MAX_SERVOS,8)];
 	dma_cb_t cb[NUM_CBS];
 };
 
 typedef struct {
-	uint8_t *virtaddr;
 	uint32_t physaddr;
 } page_map_t;
 
 page_map_t *page_map;
 
 static uint8_t *virtbase;
+static uint8_t *virtcached;
 
 static volatile uint32_t *pwm_reg;
 static volatile uint32_t *pcm_reg;
@@ -187,8 +263,12 @@ static int delay_hw = DELAY_VIA_PWM;
 static struct timeval *servo_kill_time;
 
 static int idle_timeout = 0;
+static int invert = 0;
+static int servo_min = DEFAULT_MIN;
+static int servo_max = DEFAULT_MAX;
 
 static void set_servo(int servo, int width);
+static void gpio_set_mode(uint32_t gpio, uint32_t mode);
 
 static void
 udelay(int us)
@@ -204,11 +284,19 @@ terminate(int dummy)
 	int i;
 
 	if (dma_reg && virtbase) {
-		for (i = 0; i < num_servos; i++)
-			set_servo(i, 0);
+		for (i = 0; i < MAX_SERVOS; i++) {
+			if (servo2gpio[i] != DMY)
+				set_servo(i, 0);
+		}
 		udelay(CYCLE_TIME_US);
 		dma_reg[DMA_CS] = DMA_RESET;
 		udelay(10);
+	}
+	if (restore_gpio_modes) {
+		for (i = 0; i < MAX_SERVOS; i++) {
+			if (servo2gpio[i] != DMY)
+				gpio_set_mode(servo2gpio[i], gpiomode[i]);
+		}
 	}
 	unlink(DEVFILE);
 	exit(1);
@@ -228,7 +316,7 @@ fatal(char *fmt, ...)
 static void
 init_idle_timers(void)
 {
-	servo_kill_time = calloc(num_servos, sizeof(struct timeval));
+	servo_kill_time = calloc(MAX_SERVOS, sizeof(struct timeval));
 	if (!servo_kill_time)
 		fatal("servod: calloc() failed\n");
 }
@@ -257,8 +345,8 @@ get_next_idle_timeout(struct timeval *tv)
 	long this_diff, min_diff;
 
 	gettimeofday(&now, NULL);
-	for (i = 0; i < num_servos; i++) {
-		if (servo_kill_time[i].tv_sec == 0)
+	for (i = 0; i < MAX_SERVOS; i++) {
+		if (servo2gpio[i] == DMY || servo_kill_time[i].tv_sec == 0)
 			continue;
 		else if (servo_kill_time[i].tv_sec < now.tv_sec ||
 			(servo_kill_time[i].tv_sec == now.tv_sec &&
@@ -278,23 +366,30 @@ get_next_idle_timeout(struct timeval *tv)
 	*tv = min;
 }
 
-static void
-gpio_set_mode(uint32_t pin, uint32_t mode)
+static uint32_t gpio_get_mode(uint32_t gpio)
 {
-	uint32_t fsel = gpio_reg[GPIO_FSEL0 + pin/10];
+	uint32_t fsel = gpio_reg[GPIO_FSEL0 + gpio/10];
 
-	fsel &= ~(7 << ((pin % 10) * 3));
-	fsel |= mode << ((pin % 10) * 3);
-	gpio_reg[GPIO_FSEL0 + pin/10] = fsel;
+	return (fsel >> ((gpio % 10) * 3)) & 7;
 }
 
 static void
-gpio_set(int pin, int level)
+gpio_set_mode(uint32_t gpio, uint32_t mode)
+{
+	uint32_t fsel = gpio_reg[GPIO_FSEL0 + gpio/10];
+
+	fsel &= ~(7 << ((gpio % 10) * 3));
+	fsel |= mode << ((gpio % 10) * 3);
+	gpio_reg[GPIO_FSEL0 + gpio/10] = fsel;
+}
+
+static void
+gpio_set(int gpio, int level)
 {
 	if (level)
-		gpio_reg[GPIO_SET0] = 1 << pin;
+		gpio_reg[GPIO_SET0] = 1 << gpio;
 	else
-		gpio_reg[GPIO_CLR0] = 1 << pin;
+		gpio_reg[GPIO_CLR0] = 1 << gpio;
 }
 
 static uint32_t
@@ -321,28 +416,51 @@ map_peripheral(uint32_t base, uint32_t len)
 	return vaddr;
 }
 
+/* 'servo' has already been validated as to refer to a mapped servo */
 static void
 set_servo(int servo, int width)
 {
 	struct ctl *ctl = (struct ctl *)virtbase;
-	dma_cb_t *cbp = ctl->cb + servo * SERVO_SAMPLES * 2;
-	uint32_t phys_gpclr0 = 0x7e200000 + 0x28;
-	uint32_t phys_gpset0 = 0x7e200000 + 0x1c;
-	uint32_t *dp = ctl->sample + servo * SERVO_SAMPLES;
+	volatile uint32_t *dp;
 	int i;
 	uint32_t mask = 1 << servo2gpio[servo];
 
-	dp[width] = mask;
+	if (width == servowidth[servo])
+		return;
 
-	if (width == 0) {
-		cbp->dst = phys_gpclr0;
+	if (width == 0)
+		ctl->turnon[servo] = 0;
+
+	if (width > servowidth[servo]) {
+		dp = ctl->turnoff + servostart[servo] + width;
+		if (dp >= ctl->turnoff + NUM_SAMPLES)
+			dp -= NUM_SAMPLES;
+
+		for (i = width; i > servowidth[servo]; i--) {
+			dp--;
+			if (dp < ctl->turnoff)
+				dp = ctl->turnoff + NUM_SAMPLES - 1;
+			//printf("%5d, clearing at %p\n", dp - ctl->turnoff, dp);
+			*dp &= ~mask;
+		}
 	} else {
-		for (i = width - 1; i > 0; i--)
-			dp[i] = 0;
-		dp[0] = mask;
-		cbp->dst = phys_gpset0;
-		update_idle_time(servo);
+		dp = ctl->turnoff + servostart[servo] + width;
+		if (dp >= ctl->turnoff + NUM_SAMPLES)
+			dp -= NUM_SAMPLES;
+
+		for (i = width; i < servowidth[servo]; i++) {
+			//printf("%5d, setting at %p\n", dp - ctl->turnoff, dp);
+			*dp++ |= mask;
+			if (dp >= ctl->turnoff + NUM_SAMPLES)
+				dp = ctl->turnoff;
+		}
 	}
+	servowidth[servo] = width;
+
+	if (width)
+		ctl->turnon[servo] = mask;
+
+	update_idle_time(servo);
 }
 
 static void
@@ -362,23 +480,28 @@ make_pagemap(void)
 	fd = open(pagemap_fn, O_RDONLY);
 	if (fd < 0)
 		fatal("servod: Failed to open %s: %m\n", pagemap_fn);
-	if (lseek(fd, (uint32_t)virtbase >> 9, SEEK_SET) !=
-						(uint32_t)virtbase >> 9) {
+	if (lseek(fd, (uint32_t)virtcached >> 9, SEEK_SET) !=
+						(uint32_t)virtcached >> 9) {
 		fatal("servod: Failed to seek on %s: %m\n", pagemap_fn);
 	}
 	for (i = 0; i < NUM_PAGES; i++) {
 		uint64_t pfn;
-		page_map[i].virtaddr = virtbase + i * PAGE_SIZE;
-		// Following line forces page to be allocated
-		page_map[i].virtaddr[0] = 0;
 		if (read(fd, &pfn, sizeof(pfn)) != sizeof(pfn))
 			fatal("servod: Failed to read %s: %m\n", pagemap_fn);
 		if (((pfn >> 55) & 0x1bf) != 0x10c)
 			fatal("servod: Page %d not present (pfn 0x%016llx)\n", i, pfn);
 		page_map[i].physaddr = (uint32_t)pfn << PAGE_SHIFT | 0x40000000;
+		if (mmap(virtbase + i * PAGE_SIZE, PAGE_SIZE, PROT_READ|PROT_WRITE,
+			MAP_SHARED|MAP_FIXED|MAP_LOCKED|MAP_NORESERVE,
+			memfd, (uint32_t)pfn << PAGE_SHIFT | 0x40000000) !=
+				virtbase + i * PAGE_SIZE) {
+			fatal("Failed to create uncached map of page %d at %p\n",
+				i,  virtbase + i * PAGE_SIZE);
+		}
 	}
 	close(fd);
 	close(memfd);
+	memset(virtbase, 0, NUM_PAGES * PAGE_SIZE);
 }
 
 static void
@@ -402,34 +525,74 @@ init_ctrl_data(void)
 {
 	struct ctl *ctl = (struct ctl *)virtbase;
 	dma_cb_t *cbp = ctl->cb;
-	uint32_t phys_fifo_addr;
-	uint32_t phys_gpclr0 = 0x7e200000 + 0x28;
-	int servo, i;
+	uint32_t phys_fifo_addr, cbinfo;
+	uint32_t phys_gpclr0;
+	uint32_t phys_gpset0;
+	int servo, i, numservos = 0, curstart = 0;
+	uint32_t maskall = 0;
 
-	if (delay_hw == DELAY_VIA_PWM)
-		phys_fifo_addr = (PWM_BASE | 0x7e000000) + 0x18;
-	else
-		phys_fifo_addr = (PCM_BASE | 0x7e000000) + 0x04;
-
-	memset(ctl->sample, 0, sizeof(ctl->sample));
-	for (servo = 0 ; servo < num_servos; servo++) {
-		for (i = 0; i < SERVO_SAMPLES; i++)
-			ctl->sample[servo * SERVO_SAMPLES + i] = 1 << servo2gpio[servo];
+	if (invert) {
+		phys_gpclr0 = 0x7e200000 + 0x1c;
+		phys_gpset0 = 0x7e200000 + 0x28;
+	} else {
+		phys_gpclr0 = 0x7e200000 + 0x28;
+		phys_gpset0 = 0x7e200000 + 0x1c;
 	}
+
+	if (delay_hw == DELAY_VIA_PWM) {
+		phys_fifo_addr = (PWM_BASE | 0x7e000000) + 0x18;
+		cbinfo = DMA_NO_WIDE_BURSTS | DMA_WAIT_RESP | DMA_D_DREQ | DMA_PER_MAP(5);
+	} else {
+		phys_fifo_addr = (PCM_BASE | 0x7e000000) + 0x04;
+		cbinfo = DMA_NO_WIDE_BURSTS | DMA_WAIT_RESP | DMA_D_DREQ | DMA_PER_MAP(2);
+	}
+
+	memset(ctl->turnon, 0, sizeof(ctl->turnon));
+
+	for (servo = 0 ; servo < MAX_SERVOS; servo++) {
+		servowidth[servo] = 0;
+		if (servo2gpio[servo] != DMY) {
+			numservos++;
+			maskall |= 1 << servo2gpio[servo];
+		}
+	}
+
+	for (i = 0; i < NUM_SAMPLES; i++)
+		ctl->turnoff[i] = maskall;
+
+	for (servo = 0; servo < MAX_SERVOS; servo++) {
+		if (servo2gpio[servo] != DMY) {
+			servostart[servo] = curstart;
+			curstart += NUM_SAMPLES / num_servos;
+		}
+	}
+
+	servo = 0;
+	while (servo < MAX_SERVOS && servo2gpio[servo] == DMY)
+		servo++;
 
 	for (i = 0; i < NUM_SAMPLES; i++) {
 		cbp->info = DMA_NO_WIDE_BURSTS | DMA_WAIT_RESP;
-		cbp->src = mem_virt_to_phys(ctl->sample + i);
+		cbp->src = mem_virt_to_phys(ctl->turnoff + i);
 		cbp->dst = phys_gpclr0;
 		cbp->length = 4;
 		cbp->stride = 0;
 		cbp->next = mem_virt_to_phys(cbp + 1);
 		cbp++;
+		if (i == servostart[servo]) {
+			cbp->info = DMA_NO_WIDE_BURSTS | DMA_WAIT_RESP;
+			cbp->src = mem_virt_to_phys(ctl->turnon + servo);
+			cbp->dst = phys_gpset0;
+			cbp->length = 4;
+			cbp->stride = 0;
+			cbp->next = mem_virt_to_phys(cbp + 1);
+			cbp++;
+			servo++;
+			while (servo < MAX_SERVOS && servo2gpio[servo] == DMY)
+				servo++;
+		}
 		// Delay
-		if (delay_hw == DELAY_VIA_PWM)
-			cbp->info = DMA_NO_WIDE_BURSTS | DMA_WAIT_RESP | DMA_D_DREQ | DMA_PER_MAP(5);
-		else
-			cbp->info = DMA_NO_WIDE_BURSTS | DMA_WAIT_RESP | DMA_D_DREQ | DMA_PER_MAP(2);
+		cbp->info = cbinfo;
 		cbp->src = mem_virt_to_phys(ctl);	// Any data will do
 		cbp->dst = phys_fifo_addr;
 		cbp->length = 4;
@@ -500,6 +663,30 @@ init_hardware(void)
 }
 
 static void
+do_debug(void)
+{
+	int i;
+	uint32_t mask = 0;
+	uint32_t last = 0xffffffff;
+	struct ctl *ctl = (struct ctl *)virtbase;
+
+	printf("Servo  Start  Width\n");
+	for (i = 0; i < MAX_SERVOS; i++) {
+		if (servo2gpio[i] != DMY) {
+			printf("%3d: %6d %6d\n", i, servostart[i], servowidth[i]);
+			mask |= 1 << servo2gpio[i];
+		}
+	}
+	printf("\nData:\n");
+	for (i = 0; i < NUM_SAMPLES; i++) {
+		uint32_t curr = ctl->turnoff[i] & mask;
+		if (curr != last)
+			printf("%5d: %08x\n", i, curr);
+		last = curr;
+	}
+}
+
+static void
 go_go_go(void)
 {
 	int fd;
@@ -525,11 +712,15 @@ go_go_go(void)
 				line[++nchars] = '\0';
 				nchars = 0;
 				n = sscanf(line, "%d=%d%c", &servo, &width, &nl);
-				if (n !=3 || nl != '\n') {
+				if (!strcmp(line, "debug\n")) {
+					do_debug();
+				} else if (n !=3 || nl != '\n') {
 					fprintf(stderr, "Bad input: %s", line);
-				} else if (servo < 0 || servo >= num_servos) {
+				} else if (servo < 0 || servo >= MAX_SERVOS) {
 					fprintf(stderr, "Invalid servo number %d\n", servo);
-				} else if (width < SERVO_MIN || width > SERVO_MAX) {
+				} else if (servo2gpio[servo] == DMY) {
+					fprintf(stderr, "Servo %d is not mapped to a GPIO pin\n", servo);
+				} else if (width && (width < servo_min || width > servo_max)) {
 					fprintf(stderr, "Invalid width %d\n", width);
 				} else {
 					set_servo(servo, width);
@@ -588,10 +779,103 @@ board_rev(void)
 	return rev;
 }
 
+static void
+parse_pin_lists(int p1first, char *p1pins, char*p5pins)
+{
+	char *name, *pins;
+	int mapcnt;
+	uint8_t *map;
+	int lst, servo = 0;
+
+	memset(servo2gpio, DMY, sizeof(servo2gpio));
+	for (lst = 0; lst < 2; lst++) {
+		if (lst == 0 && p1first) {
+			name = "P1";
+			pins = p1pins;
+			if (board_rev() == 1) {
+				map = rev1_p1pin2gpio_map;
+				mapcnt = sizeof(rev1_p1pin2gpio_map);
+			} else {
+				map = rev2_p1pin2gpio_map;
+				mapcnt = sizeof(rev2_p1pin2gpio_map);
+			}
+		} else {
+			name = "P5";
+			pins = p5pins;
+			if (board_rev() == 1) {
+				map = rev1_p5pin2gpio_map;
+				mapcnt = sizeof(rev1_p5pin2gpio_map);
+			} else {
+				map = rev2_p5pin2gpio_map;
+				mapcnt = sizeof(rev2_p5pin2gpio_map);
+			}
+		}
+		while (*pins) {
+			char *end;
+			long pin = strtol(pins, &end, 0);
+
+			if (*end && (end == pins || *end != ','))
+				fatal("Invalid character '%c' in %s pin list\n", *end, name);
+			if (pin < 0 || pin > mapcnt)
+				fatal("Invalid pin number %d in %s pin list\n", pin, name);
+			if (servo == MAX_SERVOS)
+				fatal("Too many servos specified\n");
+			if (pin == 0) {
+				servo++;
+			} else {
+				if (map[pin-1] == DMY)
+					fatal("Pin %d on header %s cannot be used for a servo output\n", pin, name);
+				servo2gpio[servo++] = map[pin-1];
+				num_servos++;
+			}
+			pins = end;
+			if (*pins == ',')
+				pins++;
+		}
+	}
+}
+
+static uint8_t gpiosearch(uint8_t gpio, uint8_t *map, int len)
+{
+	while (--len) {
+		if (map[len] == gpio)
+			return len+1;
+	}
+	return 0;
+}
+
+static char *
+gpio2pinname(uint8_t gpio)
+{
+	static char res[16];
+	uint8_t pin;
+
+	if (board_rev() == 1) {
+		if ((pin = gpiosearch(gpio, rev1_p1pin2gpio_map, sizeof(rev1_p1pin2gpio_map))))
+			sprintf(res, "P1-%d", pin);
+		else if ((pin = gpiosearch(gpio, rev1_p5pin2gpio_map, sizeof(rev1_p5pin2gpio_map))))
+			sprintf(res, "P5-%d", pin);
+		else
+			fatal("Cannot map GPIO %d to a header pin\n", gpio);
+	} else {
+		if ((pin = gpiosearch(gpio, rev2_p1pin2gpio_map, sizeof(rev2_p1pin2gpio_map))))
+			sprintf(res, "P1-%d", pin);
+		else if ((pin = gpiosearch(gpio, rev2_p5pin2gpio_map, sizeof(rev2_p5pin2gpio_map))))
+			sprintf(res, "P5-%d", pin);
+		else
+			fatal("Cannot map GPIO %d to a header pin\n", gpio);
+	}
+
+	return res;
+}
+
 int
 main(int argc, char **argv)
 {
 	int i;
+	char *p1pins = default_p1_pins;
+	char *p5pins = default_p5_pins;
+	int p1first = 1, hadp1 = 0, hadp5 = 0;
 
 	while (1) {
 		int c;
@@ -600,12 +884,16 @@ main(int argc, char **argv)
 		static struct option long_options[] = {
 			{ "pcm",          no_argument,       0, 'p' },
 			{ "idle-timeout", required_argument, 0, 't' },
-			{ "idle_timeout", required_argument, 0, 't' },
 			{ "help",         no_argument,       0, 'h' },
+			{ "p1pins",       required_argument, 0, '1' },
+			{ "p5pins",       required_argument, 0, '5' },
+			{ "min",          required_argument, 0, 'm' },
+			{ "max",          required_argument, 0, 'x' },
+			{ "invert",       no_argument,       0, 'i' },
 			{ 0,              0,                 0, 0   }
 		};
 
-		c = getopt_long(argc, argv, "hpt:", long_options, &option_index);
+		c = getopt_long(argc, argv, "mxhnt:15i", long_options, &option_index);
 		if (c == -1) {
 			break;
 		} else if (c == 'p') {
@@ -615,36 +903,77 @@ main(int argc, char **argv)
 			if (idle_timeout < 10 || idle_timeout > 3600000)
 				fatal("Invalid idle_timeout specified\n");
 		} else if (c == 'h') {
-			printf("\nUsage: %s [--pcm] [--idle-timeout=N]\n\n"
-				"Where:\n"
+			printf("\nUsage: %s <options>\n\n"
+				"Options:\n"
                                 "  --pcm             tells servod to use PCM rather than PWM hardware\n"
                                 "                    to implement delays\n"
 				"  --idle-timeout=N  tells servod to stop sending servo pulses for a\n"
-				"                    given output N milliseconds after the last update\n\n",
-				argv[0]);
+				"                    given output N milliseconds after the last update\n"
+				"  --min=N           specifies the minimum allowed pulse width, default\n"
+				"                    %d or %dus\n"
+				"  --max=N           specifies the maximum allowed pulse width, default\n"
+				"                    %d or %dus\n"
+				"  --invert          Inverts outputs\n"
+				"  --p1pins=<list>   tells servod which pins on the P1 header to use\n"
+				"  --p5pins=<list>   tells servod which pins on the P5 header to use\n"
+				"\nwhere <list> defaults to \"%s\" for p1pins and\n"
+				"\"%s\" for p5pins.  p5pins is only valid on rev 2 boards.\n\n",
+				argv[0],
+				DEFAULT_MIN, DEFAULT_MIN * SAMPLE_US,
+				DEFAULT_MAX, DEFAULT_MAX * SAMPLE_US,
+				default_p1_pins, default_p5_pins);
 			exit(0);
+		} else if (c == '1') {
+			p1pins = optarg;
+			hadp1 = 1;
+			if (!hadp5)
+				p1first = 1;
+		} else if (c == '5') {
+			p5pins = optarg;
+			hadp5 = 1;
+			if (!hadp1)
+				p1first = 0;
+		} else if (c == 'm') {
+			servo_min = atoi(optarg);
+		} else if (c == 'x') {
+			servo_max = atoi(optarg);
+		} else if (c == 'i') {
+			invert = 1;
 		} else {
 			fatal("Invalid parameter\n");
 		}
 	}
+	if (servo_min < 0 || servo_max > NUM_SAMPLES || servo_min >= servo_max)
+		fatal("Invalid min and/or max values, min=%d, max=%d\n", servo_min, servo_max);
+	if (board_rev() == 1 && p5pins[0])
+		fatal("Board rev 1 does not have a P5 header\n");
 
-	/* Select the correct pin mapping based on board rev */
-	if (board_rev() == 1) {
-		servo2gpio = servo2gpio_rev1;
-		num_servos = sizeof(servo2gpio_rev1);
-	} else {
-		servo2gpio = servo2gpio_rev2;
-		num_servos = sizeof(servo2gpio_rev2);
+	parse_pin_lists(p1first, p1pins, p5pins);
+
+	printf("\nBoard revision:          %5d\n", board_rev());
+	printf("Using hardware:            %s\n", delay_hw == DELAY_VIA_PWM ? "PWM" : "PCM");
+	if (idle_timeout)
+		printf("Idle timeout:            %5dms\n", idle_timeout);
+	else
+		printf("Idle timeout:         Disabled\n");
+	printf("Number of servos:        %5d\n", num_servos);
+	printf("Servo cycle time:        %5dus\n", CYCLE_TIME_US);
+	printf("Pulse width units:       %5dus\n", SAMPLE_US);
+	printf("Minimum width value:     %5d (%dus)\n", servo_min,
+						servo_min * SAMPLE_US);
+	printf("Maximum width value:     %5d (%dus)\n", servo_max,
+						servo_max * SAMPLE_US);
+	printf("Output levels:        %s\n", invert ? "Inverted" : "  Normal");
+	printf("\nUsing P1 pins:           %s\n", p1pins);
+	if (board_rev() > 1)
+		printf("Using P5 pins:           %s\n", p5pins);
+	printf("\nServo mapping:\n");
+	for (i = 0; i < MAX_SERVOS; i++) {
+		if (servo2gpio[i] == DMY)
+			continue;
+		printf("    %2d on %-5s          GPIO-%d\n", i, gpio2pinname(servo2gpio[i]), servo2gpio[i]);
 	}
-
-	printf("Board revision:      %5d\n", board_rev());
-	printf("Using hardware:      %5s\n", delay_hw == DELAY_VIA_PWM ? "PWM" : "PCM");
-	printf("Idle timeout (ms):   %5d\n", idle_timeout);
-	printf("Number of servos:    %5d\n", num_servos);
-	printf("Servo cycle time:    %5dus\n", CYCLE_TIME_US);
-	printf("Pulse width units:   %5dus\n", SAMPLE_US);
-	printf("Maximum width value: %5d (%dus)\n", SERVO_MAX,
-						SERVO_MAX * SAMPLE_US);
+	printf("\n");
 
 	init_idle_timers();
 	setup_sighandlers();
@@ -655,20 +984,47 @@ main(int argc, char **argv)
 	clk_reg = map_peripheral(CLK_BASE, CLK_LEN);
 	gpio_reg = map_peripheral(GPIO_BASE, GPIO_LEN);
 
+	/*
+	 * Map the pages to our vitual address space; this reserves them and
+	 * locks them in memory.  However, these are L1 & L2 non-coherent
+	 * cached pages and we want coherent access to them so the DMA
+	 * controller sees our changes immediately.  To get that, we create a
+	 * second mapping of the same size and immediately free it.  This gives
+	 * us an address in our virtual address space where we can map in a
+	 * coherent view of the physical pages that were allocated by the first
+	 * mmap(). This coherent mapping happens in make_pagemap().  All
+	 * accesses to our memory that is shared with the DMA controller are
+	 * via this second coherent mapping.  The memset() below forces the
+	 * pages to be allocated.
+	 */
+	virtcached = mmap(NULL, NUM_PAGES * PAGE_SIZE, PROT_READ|PROT_WRITE,
+			MAP_SHARED|MAP_ANONYMOUS|MAP_NORESERVE|MAP_LOCKED,
+			-1, 0);
+	if (virtcached == MAP_FAILED)
+		fatal("servod: Failed to mmap for cached pages: %m\n");
+	if ((unsigned long)virtcached & (PAGE_SIZE-1))
+		fatal("servod: Virtual address is not page aligned\n");
+	memset(virtcached, 0, NUM_PAGES * PAGE_SIZE);
+
 	virtbase = mmap(NULL, NUM_PAGES * PAGE_SIZE, PROT_READ|PROT_WRITE,
 			MAP_SHARED|MAP_ANONYMOUS|MAP_NORESERVE|MAP_LOCKED,
 			-1, 0);
 	if (virtbase == MAP_FAILED)
-		fatal("servod: Failed to mmap physical pages: %m\n");
+		fatal("servod: Failed to mmap uncached pages: %m\n");
 	if ((unsigned long)virtbase & (PAGE_SIZE-1))
 		fatal("servod: Virtual address is not page aligned\n");
+	munmap(virtbase, NUM_PAGES * PAGE_SIZE);
 
 	make_pagemap();
 
-	for (i = 0; i < num_servos; i++) {
-		gpio_set(servo2gpio[i], 0);
+	for (i = 0; i < MAX_SERVOS; i++) {
+		if (servo2gpio[i] == DMY)
+			continue;
+		gpiomode[i] = gpio_get_mode(servo2gpio[i]);
+		gpio_set(servo2gpio[i], invert ? 1 : 0);
 		gpio_set_mode(servo2gpio[i], GPIO_MODE_OUT);
 	}
+	restore_gpio_modes = 1;
 
 	init_ctrl_data();
 	init_hardware();

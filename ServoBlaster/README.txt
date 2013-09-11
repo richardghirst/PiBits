@@ -6,17 +6,22 @@ commands to the driver saying what pulse width a particular servo output should
 use.  The driver maintains that pulse width until you send a new command
 requesting some other width.
 
-Currently is it configured to drive 8 servos.  Servos typically need an active
-high pulse of somewhere between 0.5ms and 2.5ms, where the pulse width controls
-the position of the servo.  The pulse should be repeated approximately every
-20ms, although pulse frequency is not critical.  The pulse width is critical,
-as that translates directly to the servo position.
+By default is it configured to drive 8 servos, although you can configure it to
+drive up to 21.  Servos typically need an active high pulse of somewhere
+between 0.5ms and 2.5ms, where the pulse width controls the position of the
+servo.  The pulse should be repeated approximately every 20ms, although pulse
+frequency is not critical.  The pulse width is critical, as that translates
+directly to the servo position.
+
+In addition to driving servos, ServoBlaster can be configured to generate pulse
+widths between 0 and 100% of the 20ms cycle time, making it suitable for
+controling the brightness of up to 21 LEDs, for example.
 
 The driver creates a device file, /dev/servoblaster, in to which you can send
 commands.  The command format is "<servo-number>=<sero-position>", where servo
-number is a number from 0 to 7 inclusive, and servo position is the pulse width
-you want in units of 10us.  So, if you want to set servo 3 to a pulse width of
-1.2ms you could do this at the shell prompt:
+number is by default a number from 0 to 7 inclusive, and servo position is the
+pulse width you want in units of 10us.  So, if you want to set servo 3 to a
+pulse width of 1.2ms you could do this at the shell prompt:
 
 echo 3=120 > /dev/servoblaster
 
@@ -25,8 +30,8 @@ echo 3=120 > /dev/servoblaster
 If you set a servo width to 0 it turns off the servo output, without changing
 the current servo position.
 
-The code supports 8 servos, the control signals of which should be connected
-to P1 header pins as follows:
+The code defaults to driving 8 servos, the control signals of which should be
+connected to P1 header pins as follows:
 
      Servo number    GPIO number   Pin in P1 header
           0               4             P1-7
@@ -40,20 +45,22 @@ to P1 header pins as follows:
 
 P1-13 is connected to either GPIO-21 or GPIO-27, depending on board revision.
 
+Command line options described later in this document allow you to configure
+which header pins map to which servo numbers.
+
 When the driver is first loaded the GPIO pins are configure to be outputs, and
 their pulse widths are set to 0.  This is so that servos don't jump to some
 arbitrary position when you load the driver.  Once you know where you want your
 servos positioned, write a value to /dev/servoblaster to enable the respective
 output.  When the driver is unloaded it attempts to shut down the outputs
-cleanly, rather than cutting some pulse short and causing a servo position to
-jump.
+cleanly and revert the GPIO pins to their original configuration, rather than
+cutting some pulse short and causing a servo position to jump.
 
-The driver allocates a timeslot of 2.5ms to each output (8 servos resulting in
-a cycle time of 20ms).  A servo output is set high at the start of its 2.5ms
-timeslot, and set low after the appropriate delay.  There is then a further
-delay to take us to the end of that timeslot before the next servo output is
-set high.  This way there is only ever one servo output active at a time, which
-helps keep the code simple.
+The driver takes note of how many servos you have configured and distributes
+the start time for the servo pulses evenly across the 20ms cycle time.  This
+way, provided you are not driving more than 8 servos, the driver ensures that
+only one servo pulse will be active at a time, which should help minimise total
+drive current needed.
 
 In the following description it refers to using the PWM peripheral.  For the
 user space implementation it can instead use the PCM peripheral, see below
@@ -63,19 +70,14 @@ uses the PWM peripheral, so ServoBlaster can interfere with sound output.
 The driver works by setting up a linked list of DMA control blocks with the
 last one linked back to the first, so once initialized the DMA controller
 cycles round continuously and the driver does not need to get involved except
-when a pulse width needs to be changed.  For a given servo there are four DMA
-control blocks; the first transfers a single word to the GPIO 'set output'
-register, the second transfers some number of words to the PWM FIFO to generate
-the required pulse width time, the third transfers a single word to the GPIO
-'clear output' register, and the fourth transfers a number of words to the PWM
-FIFO to generate a delay up to the end of the 2.5ms timeslot.
+when a pulse width needs to be changed.  For a given 10us period there are two DMA
+control blocks; the first transfers a single word to the GPIO 'clear output'
+register, while the second transfers some number of words to the PWM FIFO to
+generate the required pulse width time.  In addition, interspersed with these
+control blocks is one for each configured servo which is used to set an output.
 
 While the driver does use the PWM peripheral, it only uses it to pace the DMA
-transfers, so as to generate accurate delays.  The PWM is set up such that it
-consumes one word from the FIFO every 10us, so to generate a delay of 1.2ms the
-driver sets the DMA transfer count to 480 (1200/10*4, as the FIFO is 32 bits
-wide).  The PWM is set to request data as soon as there is a single word free
-in the FIFO, so there should be no burst transfers to upset the timing.
+transfers, so as to generate accurate delays.
 
 I used Panalyzer running on one Pi to mointor the servo outputs from a second
 Pi.  The pulse widths and frequencies seem very stable, even under heavy SD
@@ -93,15 +95,15 @@ servo controls, to protect the Pi.  That said, I'm living dangerously and doing
 without :-)  If you just want to experiment with a small servo you can probably
 take the 5 volts for it from the header pins on the Pi, but I find that doing
 anything non-trivial with four servos connected pulls the 5 volts down far
-enough to crash the Pi!
+enough to crash the Pi.
 
 
 
 There are two implementions of ServoBlaster; a kernel module based one, and a
 user space daemon.  The kernel module based one is the original, but is more of
 a pain to build because you need a matching kernel build.  The user space
-daemon implementation is much more convenient to use but does not have all the
-features of the kernel based one.  I would recommend you try the user space
+daemon implementation is much more convenient to use and now has rather more
+features than the kernel based one.  I would recommend you try the user space
 implementation first, as it is likely to be easier to get going.
 
 The kernel module implementation is in the subdirectory 'kernel', while the
@@ -117,43 +119,118 @@ The user space daemon
 To use this daemon grab the servod.c source and Makefile and:
 
 $ make servod
+$ ./servod --help
+
+Usage: ./servod <options>
+
+Options:
+  --pcm             tells servod to use PCM rather than PWM hardware
+                    to implement delays
+  --idle-timeout=N  tells servod to stop sending servo pulses for a
+                    given output N milliseconds after the last update
+  --min=N           specifies the minimum allowed pulse width, default
+                    50 or 500us
+  --max=N           specifies the maximum allowed pulse width, default
+                    250 or 2500us
+  --invert          Inverts outputs
+  --p1pins=<list>   tells servod which pins on the P1 header to use
+  --p5pins=<list>   tells servod which pins on the P5 header to use
+
+where <list> defaults to "7,11,12,13,15,16,18,22" for p1pins and
+"" for p5pins.  p5pins is only valid on rev 2 boards.
+
 $ sudo ./servod
-Using hardware:        PWM
-Number of servos:        8
-Servo cycle time:    20000us
-Pulse width units:      10us
-Maximum width value:   249 (2490us)
-$
+
+Board revision:              1
+Using hardware:            PWM
+Idle timeout:         Disabled
+Number of servos:            8
+Servo cycle time:        20000us
+Pulse width units:          10us
+Minimum width value:        50 (500us)
+Maximum width value:       250 (2500us)
+Output levels:          Normal
+
+Using P1 pins:           7,11,12,13,15,16,18,22
+
+Servo mapping:
+     0 on P1-7           GPIO-4
+     1 on P1-11          GPIO-17
+     2 on P1-12          GPIO-18
+     3 on P1-13          GPIO-21
+     4 on P1-15          GPIO-22
+     5 on P1-16          GPIO-23
+     6 on P1-18          GPIO-24
+     7 on P1-22          GPIO-25
+
+$ 
 
 The prompt will return immediately, and servod is left running in the
-background.  You can check it is running via the "ps ax" command.
-If you want to stop servod, the easiest way is to run:
+background.  You can check it is running via the "ps ax" command.  If you want
+to stop servod, the easiest way is to run:
 
 $ sudo killall servod
 
 Note that use of PWM will interfere with 3.5mm jack audio output.  Instead
 of using the PWM hardware, you can use the PCM hardware, which is less likely
 to cause a conflict.  Please be aware that the PCM mode is very lightly tested
-at present.  To use PCM mode, invoke servod as follows:
-
-$ sudo ./servod --pcm
-Using hardware:        PCM
-...
+at present.
 
 Some people have requested that a servo output turns off automatically if no
 new pulse width has been requested recently, and I've had two reports of
 servos overheating when driven for long periods of time.  To support this
 request, servod implements an idle timeout which can be specified at
-module load time.  The value is specified in milliseconds, so if you want
-to drive your servos for 2 seconds following each new width request you would
-do this:
-
-$ sudo ./servod --idle-timeout=2000
+module load time.  The value is specified in milliseconds.
 
 Typical small servos take a few 100 milliseconds to rotate from one extreme
-to the other, so for small values of idle_timeout you might find the control
+to the other, so for small values of idle-timeout you might find the control
 pulse is turned off before your servo has reached the required position.
-idle_timeout defaults to 0, which disables the feature.
+idle-timeout defaults to 0, which disables the feature.
+
+By default ServoBlaster attempts to protect your servos by setting minimum and
+maximum values on the pulse width of 50 and 250 (500us and 2.5ms).  If you want
+to generate pulse widths up to 100% for some other purpose, you need to specify
+the minimum and maximum values you want (probably as 0 and 2000, for 0ms and
+20ms).
+
+If you are connecting some external drive circuitry you may want active low
+rather than active high outputs.  In that case you can specify an option to
+invert the outputs.
+
+The final options relate to which header pins you want to use to drive your
+servos.  On a Rev 1 board you can use up to 17 pins on the P1 header, and on a
+Rev 2 board there are an additional 4 pins available on the P5 header.  The
+default option is the equivalent of specifying
+
+   --p1pins=7,11,12,13,15,16,18,22
+
+As anotehr exmple, if for some reason you want only two servos but you want
+them to be referenced as servos 4 and 5 (perhaps you have existing software
+that uses those servo numbers), you can use '0' as a placeholder for unused
+servo IDs, as follows:
+
+$ sudo ./servod --p1pins=0,0,0,0,15,16
+...
+Using P1 pins:           0,0,0,0,15,16
+
+Servo mapping:
+     4 on P1-15          GPIO-22
+     5 on P1-16          GPIO-23
+
+If you specify both --p1pins and --p5pins, then the order in which you specify
+them is relevant because servo numbers are allocated in the order the
+parameters are specified on the command line.
+
+For the full set of P1 and P5 header pins you can use, please refer to the
+GPIO section of the following web page:
+
+  http://elinux.org/Rpi_Low-level_peripherals
+
+It should also be clear from the servod.c source which header pins ServoBlaster
+will allow you to select.  Clearly if you tell ServoBlaster to use pins that
+are normally used for some other purpose, then that other functionality will
+not be available while servod is running.
+
 
 If you want servod to start automatically when the system boots, then you
 can install it along with a startup script as follows:
@@ -161,7 +238,8 @@ can install it along with a startup script as follows:
 $ sudo make install
 
 You may wish to edit /etc/init.d/servoblaster to change the parameters that are
-specified in that script (e.g.  the idle-timeout, which is set to 2 seconds).
+specified in that script (e.g.  the idle-timeout, which is set to 2 seconds in
+the shipped version of that script).
 
 
 
@@ -170,6 +248,10 @@ The kernel space implementation
 
 Please note that the user space implementation is the preferred one to use and
 the kernel implementation (servoblaster.ko) has been depreciated.
+
+The kernel implementation is missing most of the command line options available
+in the user space implementation, and always uses the default set of 8 pins
+described above.
 
 Upon reading /dev/servoblaster, the device file provides feedback as to what
 position each servo is currently set.  For example, after starting the driver
