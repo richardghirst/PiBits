@@ -52,7 +52,9 @@ static char *default_p5_pins = "";
 #define NUM_P1PINS	26
 #define NUM_P5PINS	8
 
-#define MAX_SERVOS	21	// Count of GPIO pins on P1 and P5
+#define MAX_SERVOS	32	/* Only 21 really, but this lets you map servo IDs
+				 * to P1 pins, if you want to
+				 */
 
 static uint8_t rev1_p1pin2gpio_map[] = {
 	DMY,	// P1-1   3v3

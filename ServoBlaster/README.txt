@@ -217,6 +217,12 @@ Servo mapping:
      4 on P1-15          GPIO-22
      5 on P1-16          GPIO-23
 
+If you wanted to refer to the servos by their P1 header pins you could do
+something like this, which gives you servos 7, 11, 12 and 15 on P1 header
+pins 7, 11, 12 and 15:
+
+   --p1pins=0,0,0,0,0,0,0,7,0,0,0,11,12,0,0,15
+
 If you specify both --p1pins and --p5pins, then the order in which you specify
 them is relevant because servo numbers are allocated in the order the
 parameters are specified on the command line.
