@@ -18,14 +18,29 @@ widths between 0 and 100% of the 20ms cycle time, making it suitable for
 controling the brightness of up to 21 LEDs, for example.
 
 The driver creates a device file, /dev/servoblaster, in to which you can send
-commands.  The command format is "<servo-number>=<sero-position>", where servo
-number is by default a number from 0 to 7 inclusive, and servo position is the
-pulse width you want in units of 10us.  So, if you want to set servo 3 to a
-pulse width of 1.2ms you could do this at the shell prompt:
+commands.  The command format is either
+
+     <servo-number>=<servo-position>
+or
+     P<header>-<pin>=<servo-postion>
+
+For the first format <servo-number> is the sevo number, which by default is a
+number between 0 and 7, inclusive.  For the second format <header> is either
+'1' or '5', depending on which header your servo is connected to, and <pin> is
+the pin number on that header you have connected it to.  In both cases
+<servo-position> is the pulse width you want in units of 10us.
+
+So, if you want to set servo 3 to a pulse width of 1.2ms you could do this at
+the shell prompt:
 
 echo 3=120 > /dev/servoblaster
 
 120 is in units of 10us, so that is 1200us, or 1.2ms.
+
+Alternatively, using the second command format, if you had a servo connected to
+P1 pin 12 you could set that to a width of 1.2ms as follows:
+
+echo P1-12=120 > /dev/servoblaster
 
 If you set a servo width to 0 it turns off the servo output, without changing
 the current servo position.
@@ -46,7 +61,15 @@ connected to P1 header pins as follows:
 P1-13 is connected to either GPIO-21 or GPIO-27, depending on board revision.
 
 Command line options described later in this document allow you to configure
-which header pins map to which servo numbers.
+which header pins are used for servo control, and what servo numbers they map
+to.
+
+Note that servoblaster must know at startup which header pins it is control of.
+If you want to use a header pin that is not in the default list above, you
+must use the appropriate command line option to inform servoblaster.
+
+The driver also creates a /dev/servoblaster-cfg file, which describes which
+pins servoblaster is currently configured to use.
 
 When the driver is first loaded the GPIO pins are configure to be outputs, and
 their pulse widths are set to 0.  This is so that servos don't jump to some
@@ -257,7 +280,8 @@ the kernel implementation (servoblaster.ko) has been depreciated.
 
 The kernel implementation is missing most of the command line options available
 in the user space implementation, and always uses the default set of 8 pins
-described above.
+described above.  In addition, the kernel implementation only supports the
+first command format described above.
 
 Upon reading /dev/servoblaster, the device file provides feedback as to what
 position each servo is currently set.  For example, after starting the driver

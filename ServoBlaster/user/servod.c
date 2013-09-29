@@ -137,6 +137,8 @@ static uint8_t rev2_p5pin2gpio_map[] = {
 };
 
 static uint8_t servo2gpio[MAX_SERVOS];
+static uint8_t p1pin2servo[NUM_P1PINS+1];
+static uint8_t p5pin2servo[NUM_P5PINS+1];
 static int servostart[MAX_SERVOS];
 static int servowidth[MAX_SERVOS];
 static int num_servos;
@@ -144,6 +146,7 @@ static uint32_t gpiomode[MAX_SERVOS];
 static int restore_gpio_modes;
 
 #define DEVFILE			"/dev/servoblaster"
+#define CFGFILE			"/dev/servoblaster-cfg"
 
 #define PAGE_SIZE		4096
 #define PAGE_SHIFT		12
@@ -271,6 +274,7 @@ static int servo_max = DEFAULT_MAX;
 
 static void set_servo(int servo, int width);
 static void gpio_set_mode(uint32_t gpio, uint32_t mode);
+static char *gpio2pinname(uint8_t gpio);
 
 static void
 udelay(int us)
@@ -301,6 +305,7 @@ terminate(int dummy)
 		}
 	}
 	unlink(DEVFILE);
+	unlink(CFGFILE);
 	exit(1);
 }
 
@@ -430,8 +435,10 @@ set_servo(int servo, int width)
 	if (width == servowidth[servo])
 		return;
 
-	if (width == 0)
+	if (width == 0) {
 		ctl->turnon[servo] = 0;
+		return;
+	}
 
 	if (width > servowidth[servo]) {
 		dp = ctl->turnoff + servostart[servo] + width;
@@ -458,10 +465,7 @@ set_servo(int servo, int width)
 		}
 	}
 	servowidth[servo] = width;
-
-	if (width)
-		ctl->turnon[servo] = mask;
-
+	ctl->turnon[servo] = mask;
 	update_idle_time(servo);
 }
 
@@ -713,19 +717,48 @@ go_go_go(void)
 			if (line[nchars] == '\n') {
 				line[++nchars] = '\0';
 				nchars = 0;
-				n = sscanf(line, "%d=%d%c", &servo, &width, &nl);
-				if (!strcmp(line, "debug\n")) {
-					do_debug();
-				} else if (n !=3 || nl != '\n') {
-					fprintf(stderr, "Bad input: %s", line);
-				} else if (servo < 0 || servo >= MAX_SERVOS) {
-					fprintf(stderr, "Invalid servo number %d\n", servo);
-				} else if (servo2gpio[servo] == DMY) {
-					fprintf(stderr, "Servo %d is not mapped to a GPIO pin\n", servo);
-				} else if (width && (width < servo_min || width > servo_max)) {
-					fprintf(stderr, "Invalid width %d\n", width);
+				if (line[0] == 'p' || line[0] == 'P') {
+					int hdr, pin, width;
+
+					n = sscanf(line+1, "%d-%d=%d%c", &hdr, &pin, &width, &nl);
+					if (n != 4 || nl != '\n') {
+						fprintf(stderr, "Bad input: %s", line);
+					} else if (hdr != 1 && hdr != 5) {
+						fprintf(stderr, "Invalid header P%d\n", hdr);
+					} else if (pin < 1 ||
+							(hdr == 1 && pin > NUM_P1PINS) ||
+							(hdr == 5 && pin > NUM_P5PINS)) {
+						fprintf(stderr, "Invalid pin number P%d-%d\n", hdr, pin);
+					} else if ((hdr == 1 && p1pin2servo[pin] == DMY) ||
+						   (hdr == 5 && p5pin2servo[pin] == DMY)) {
+							fprintf(stderr, "P%d-%d is not mapped to a servo\n", hdr, pin);
+					} else {
+						if (hdr == 1) {
+							servo = p1pin2servo[pin];
+						} else {
+							servo = p5pin2servo[pin];
+						}
+						if (width && (width < servo_min || width > servo_max)) {
+							fprintf(stderr, "Invalid width %d\n", width);
+						} else {
+							set_servo(servo, width);
+						}
+					}
 				} else {
-					set_servo(servo, width);
+					n = sscanf(line, "%d=%d%c", &servo, &width, &nl);
+					if (!strcmp(line, "debug\n")) {
+						do_debug();
+					} else if (n !=3 || nl != '\n') {
+						fprintf(stderr, "Bad input: %s", line);
+					} else if (servo < 0 || servo >= MAX_SERVOS) {
+						fprintf(stderr, "Invalid servo number %d\n", servo);
+					} else if (servo2gpio[servo] == DMY) {
+						fprintf(stderr, "Servo %d is not mapped to a GPIO pin\n", servo);
+					} else if (width && (width < servo_min || width > servo_max)) {
+						fprintf(stderr, "Invalid width %d\n", width);
+					} else {
+						set_servo(servo, width);
+					}
 				}
 			} else {
 				if (++nchars >= 126) {
@@ -785,11 +818,14 @@ static void
 parse_pin_lists(int p1first, char *p1pins, char*p5pins)
 {
 	char *name, *pins;
-	int mapcnt;
-	uint8_t *map;
+	int i, mapcnt;
+	uint8_t *map, *pNpin2servo;
 	int lst, servo = 0;
+	FILE *fp;
 
 	memset(servo2gpio, DMY, sizeof(servo2gpio));
+	memset(p1pin2servo, DMY, sizeof(p1pin2servo));
+	memset(p5pin2servo, DMY, sizeof(p5pin2servo));
 	for (lst = 0; lst < 2; lst++) {
 		if (lst == 0 && p1first) {
 			name = "P1";
@@ -801,6 +837,7 @@ parse_pin_lists(int p1first, char *p1pins, char*p5pins)
 				map = rev2_p1pin2gpio_map;
 				mapcnt = sizeof(rev2_p1pin2gpio_map);
 			}
+			pNpin2servo = p1pin2servo;
 		} else {
 			name = "P5";
 			pins = p5pins;
@@ -811,6 +848,7 @@ parse_pin_lists(int p1first, char *p1pins, char*p5pins)
 				map = rev2_p5pin2gpio_map;
 				mapcnt = sizeof(rev2_p5pin2gpio_map);
 			}
+			pNpin2servo = p5pin2servo;
 		}
 		while (*pins) {
 			char *end;
@@ -827,6 +865,7 @@ parse_pin_lists(int p1first, char *p1pins, char*p5pins)
 			} else {
 				if (map[pin-1] == DMY)
 					fatal("Pin %d on header %s cannot be used for a servo output\n", pin, name);
+				pNpin2servo[pin] = servo;
 				servo2gpio[servo++] = map[pin-1];
 				num_servos++;
 			}
@@ -834,6 +873,21 @@ parse_pin_lists(int p1first, char *p1pins, char*p5pins)
 			if (*pins == ',')
 				pins++;
 		}
+	}
+	/* Write a cfg file so can tell which pins are used for servos */
+	fp = fopen(CFGFILE, "w");
+	if (fp) {
+		if (p1first)
+			fprintf(fp, "p1pins=%s\np5pins=%s\n", p1pins, p5pins);
+		else
+			fprintf(fp, "p5pins=%s\np1pins=%s\n", p5pins, p1pins);
+		fprintf(fp, "\nServo mapping:\n");
+		for (i = 0; i < MAX_SERVOS; i++) {
+			if (servo2gpio[i] == DMY)
+				continue;
+			fprintf(fp, "    %2d on %-5s          GPIO-%d\n", i, gpio2pinname(servo2gpio[i]), servo2gpio[i]);
+		}
+		fclose(fp);
 	}
 }
 
