@@ -284,10 +284,10 @@ set_pin2gpio(int pin, float width){
                 if (pin2gpio[i] == pin || pin2gpio[i] == 0) {
                         pin2gpio[i] = pin;
                         channel_pwm[i] = width;
-                        printf("Using Pin:                 %d\n", pin);
-                        printf("PWM width param:                 %f\n", width);
-                        printf("Channel PWM width:                 %f\n", channel_pwm[i]);
-                        printf("Pin and Channel index:                 %d\n", i);
+                        //printf("Using Pin:                 %d\n", pin);
+                        //printf("PWM width param:                 %f\n", width);
+                        //printf("Channel PWM width:                 %f\n", channel_pwm[i]);
+                        //printf("Pin and Channel index:                 %d\n", i);
                         established = 1;
                         break;
                 }
@@ -314,11 +314,11 @@ set_pwm(int channel, float width)
 {
         set_pins(channel, width);
         int i;
-        printf("Pins being used:           \n");
-        for (i = 0; i < NUM_CHANNELS; i++){
-                printf("%d, ", pin2gpio[i]);
-        }
-        printf("\n");
+        //printf("Pins being used:           \n");
+        //for (i = 0; i < NUM_CHANNELS; i++){
+                //printf("%d, ", pin2gpio[i]);
+        //}
+        //printf("\n");
         update_pwm();
 }
 
@@ -589,7 +589,7 @@ go_go_go(void)
 		n = sscanf(lineptr, "%d=%f%c", &servo, &value, &nl);
 		if (n !=3 || nl != '\n') {
 			fprintf(stderr, "Bad input: %s", lineptr);
-		} else if (servo < 0){
+		} else if (servo < 0){ // removed servo validation against CHANNEL_NUM no longer needed since now we used real GPIO names
 			fprintf(stderr, "Invalid channel number %d\n", servo);
 		} else if (value < 0 || value > 1) {
 			fprintf(stderr, "Invalid value %f\n", value);
