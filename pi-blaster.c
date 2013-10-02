@@ -257,19 +257,16 @@ map_peripheral(uint32_t base, uint32_t len)
 // Check if the pin provided is found in the list of known pins.
 static int
 is_known_pin(int pin){
-        int found = 0;
+  int found = 0;
 
-        int i;
-        for (i = 0; i < NUM_CHANNELS; i++) {
-                if (known_pins[i] == pin) {
-                        found = 1;
-                        printf("Found Pin:                 %d\n", pin);
-                        break;
-                }else{
-                        found = 0;
-                }
-        }
-        return(found);
+  int i;
+  for (i = 0; i < NUM_CHANNELS; i++) {
+    if (known_pins[i] == pin) {
+      found = 1;
+      break;
+    }
+  }
+  return(found);
 }
 
 // Set the pin to a pin2gpio element so pi-blaster can write to it,
@@ -277,48 +274,79 @@ is_known_pin(int pin){
 // in channel_pwm array.
 static int
 set_pin2gpio(int pin, float width){
-        int established = 0;
+  int established = 0;
 
-        int i;
-        for (i = 0; i < NUM_CHANNELS; i++) {
-                if (pin2gpio[i] == pin || pin2gpio[i] == 0) {
-                        pin2gpio[i] = pin;
-                        channel_pwm[i] = width;
-                        //printf("Using Pin:                 %d\n", pin);
-                        //printf("PWM width param:                 %f\n", width);
-                        //printf("Channel PWM width:                 %f\n", channel_pwm[i]);
-                        //printf("Pin and Channel index:                 %d\n", i);
-                        established = 1;
-                        break;
-                }
-        }
+  int i;
+  for (i = 0; i < NUM_CHANNELS; i++) {
+    if (pin2gpio[i] == pin || pin2gpio[i] == 0) {
+      pin2gpio[i] = pin;
+      channel_pwm[i] = width;
+      printf("Using Pin:                 %d\n", pin);
+      printf("PWM width param:                 %f\n", width);
+      printf("Channel PWM width:                 %f\n", channel_pwm[i]);
+      printf("Pin and Channel index:                 %d\n", i);
+      established = 1;
+      break;
+    }
+  }
 
-        return(established);
+  return(established);
+
+}
+
+static int
+release_pin2gpio(int pin)
+{
+  int released = 0;
+
+  int i;
+  for (i = 0; i < NUM_CHANNELS; i++) {
+    if (pin2gpio[i] == pin) {
+      pin2gpio[i] = 0;
+      printf("Releasing Pin:                 %d\n", pin);
+      printf("Pin was using channel index:                 %d\n", i);
+      released = 1;
+      break;
+    }
+  }
+
+  return(released);
 
 }
 
 // Set each provided pin to one in pin2gpio
 static void
-set_pins(int pin, float width)
+set_pin(int pin, float width)
 {
-        if (is_known_pin(pin)){
-                set_pin2gpio(pin, width);
-        }else{
-                printf("Not a known pin for pi-blaster");
-        }
+  if (is_known_pin(pin)){
+    set_pin2gpio(pin, width);
+  }else{
+    printf("Not a known pin for pi-blaster");
+  }
+}
+
+
+static void
+release_pin(int pin)
+{
+  if (is_known_pin(pin)){
+    release_pin2gpio(pin);
+  }else{
+    printf("Not a known pin for pi-blaster");
+  }
 }
 
 // Set pin2gpio pins, channel width and update the pwm send to pins being used.
 static void
 set_pwm(int channel, float width)
 {
-        set_pins(channel, width);
+        set_pin(channel, width);
         int i;
-        //printf("Pins being used:           \n");
-        //for (i = 0; i < NUM_CHANNELS; i++){
-                //printf("%d, ", pin2gpio[i]);
-        //}
-        //printf("\n");
+        printf("Pins being used:           \n");
+        for (i = 0; i < NUM_CHANNELS; i++){
+                printf("%d, ", pin2gpio[i]);
+        }
+        printf("\n");
         update_pwm();
 }
 
@@ -588,7 +616,15 @@ go_go_go(void)
 		//fprintf(stderr, "[%d]%s", n, lineptr);
 		n = sscanf(lineptr, "%d=%f%c", &servo, &value, &nl);
 		if (n !=3 || nl != '\n') {
-			fprintf(stderr, "Bad input: %s", lineptr);
+			//fprintf(stderr, "Bad input: %s", lineptr);
+      n = sscanf(lineptr, "release %d", &servo);
+      if (n != 1 || nl != '\n') {
+        fprintf(stderr, "Bad input: %s", lineptr);
+      } else {
+        //pinwatched[servo] = 0;
+        // Release Pin from pin2gpio array if the release command is received.
+        release_pin(servo);
+      }
 		} else if (servo < 0){ // removed servo validation against CHANNEL_NUM no longer needed since now we used real GPIO names
 			fprintf(stderr, "Invalid channel number %d\n", servo);
 		} else if (value < 0 || value > 1) {
