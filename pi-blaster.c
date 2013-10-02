@@ -302,6 +302,7 @@ release_pin2gpio(int pin)
   int i;
   for (i = 0; i < NUM_CHANNELS; i++) {
     if (pin2gpio[i] == pin) {
+      channel_pwm[i] = 0;
       pin2gpio[i] = 0;
       printf("Releasing Pin:                 %d\n", pin);
       printf("Pin was using channel index:                 %d\n", i);
@@ -487,10 +488,11 @@ init_ctrl_data(void)
 	
 	// Calculate a mask to turn off all the servos
 	mask = 0;
-	for (i = 0; i < NUM_CHANNELS; i++)
+	for (i = 0; i < NUM_CHANNELS; i++){
     // Check the pin2gpio pin has been set to avoid locking all of them as PWM.
     if (pin2gpio[i])
       mask |= 1 << pin2gpio[i];
+  }
 	for (i = 0; i < NUM_SAMPLES; i++)
 		ctl->sample[i] = mask;
 
