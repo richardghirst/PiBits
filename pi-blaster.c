@@ -254,6 +254,7 @@ map_peripheral(uint32_t base, uint32_t len)
 	return vaddr;
 }
 
+// Check if the pin provided is found in the list of known pins.
 static int
 is_known_pin(int pin){
         int found = 0;
@@ -271,6 +272,9 @@ is_known_pin(int pin){
         return(found);
 }
 
+// Set the pin to a pin2gpio element so pi-blaster can write to it,
+// and set the width of the PWM pulse to the element with the same index
+// in channel_pwm array.
 static int
 set_pin2gpio(int pin, float width){
         int established = 0;
@@ -293,6 +297,7 @@ set_pin2gpio(int pin, float width){
 
 }
 
+// Set each provided pin to one in pin2gpio
 static void
 set_pins(int pin, float width)
 {
@@ -303,6 +308,7 @@ set_pins(int pin, float width)
         }
 }
 
+// Set pin2gpio pins, channel width and update the pwm send to pins being used.
 static void
 set_pwm(int channel, float width)
 {
@@ -351,6 +357,7 @@ update_pwm()
 	/*   Now create a mask of all the pins that should be on */
 	mask = 0;
 	for (i = 0; i < NUM_CHANNELS; i++) {
+    // Check the pin2gpio pin has been set to avoid locking all of them as PWM.
 		if (channel_pwm[i] > 0 && pin2gpio[i]) {
 			mask |= 1 << pin2gpio[i];
 		}
@@ -366,6 +373,7 @@ update_pwm()
 			ctl->cb[j*2].dst = phys_gpclr0;
 		mask = 0;
 		for (i = 0; i < NUM_CHANNELS; i++) {
+      // Check the pin2gpio pin has been set to avoid locking all of them as PWM.
 			if ((float)j/NUM_SAMPLES > channel_pwm[i] && pin2gpio[i])
 				mask |= 1 << pin2gpio[i];
 		}
@@ -446,6 +454,7 @@ init_ctrl_data(void)
 	// Calculate a mask to turn off all the servos
 	mask = 0;
 	for (i = 0; i < NUM_CHANNELS; i++)
+    // Check the pin2gpio pin has been set to avoid locking all of them as PWM.
     if (pin2gpio[i])
       mask |= 1 << pin2gpio[i];
 	for (i = 0; i < NUM_SAMPLES; i++)
@@ -685,6 +694,7 @@ main(int argc, char **argv)
 	make_pagemap();
 
 	for (i = 0; i < NUM_CHANNELS; i++) {
+    // Check the pin2gpio pin has been set to avoid locking all of them as PWM.
     if (pin2gpio[i]){
       gpio_set(pin2gpio[i], invert_mode);
       gpio_set_mode(pin2gpio[i], GPIO_MODE_OUT);
@@ -693,6 +703,7 @@ main(int argc, char **argv)
 
 	init_ctrl_data();
 	init_hardware();
+  // Init pin2gpio array with 0/false values to avoid locking all of them as PWM.
 	init_pin2gpio();
 	init_channel_pwm();
 
