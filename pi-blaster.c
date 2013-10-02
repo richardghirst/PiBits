@@ -38,7 +38,7 @@ static char VERSION[] = "0.1.0";
 
 // Created new known_pins with raspberry pi list of pins
 // to compare against the param received.
-static int known_pins[] = {
+static uint8_t known_pins[] = {
         4,      // P1-7
         17,     // P1-11
         18,     // P1-12
@@ -294,6 +294,26 @@ set_pin2gpio(int pin, float width){
 
 }
 
+static void
+compact_pin2gpio(){
+  int i, j = 0;
+  uint8_t tmp_pin2gpio[] = { 0,0,0,0,0,0,0,0 };
+  float tmp_channel_pwm[] = { 0,0,0,0,0,0,0,0 };
+
+  for (i = 0; i < NUM_CHANNELS; i++) {
+    if (pin2gpio[i] != 0){
+      tmp_pin2gpio[j] = pin2gpio[i];
+      tmp_channel_pwm[j] = channel_pwm[i];
+      j++;
+    }
+  }
+  for (i= 0 ;i < NUM_CHANNELS; i++){
+    pin2gpio[i] = tmp_pin2gpio[i];
+    channel_pwm[i] = tmp_channel_pwm[i];
+  }
+}
+
+
 static int
 release_pin2gpio(int pin)
 {
@@ -311,6 +331,7 @@ release_pin2gpio(int pin)
     }
   }
 
+  compact_pin2gpio();
   return(released);
 
 }
@@ -332,29 +353,36 @@ release_pin(int pin)
 {
   if (is_known_pin(pin)){
     release_pin2gpio(pin);
-    printf("Pins being used:           \n");
-    int i;
-    for (i = 0; i < NUM_CHANNELS; i++){
-            printf("%d, ", pin2gpio[i]);
-    }
-    printf("\n");
   }else{
     printf("Not a known pin for pi-blaster");
   }
 }
 
+static void
+release_pwm(int pin){
+  release_pin(pin);
+  int i;
+  printf("Pins being used:           \n");
+  for (i = 0; i < NUM_CHANNELS; i++){
+    printf("%d, ", pin2gpio[i]);
+  }
+  printf("\n");
+  update_pwm();
+}
+
+
 // Set pin2gpio pins, channel width and update the pwm send to pins being used.
 static void
 set_pwm(int channel, float width)
 {
-        set_pin(channel, width);
-        int i;
-        printf("Pins being used:           \n");
-        for (i = 0; i < NUM_CHANNELS; i++){
-                printf("%d, ", pin2gpio[i]);
-        }
-        printf("\n");
-        update_pwm();
+  set_pin(channel, width);
+  int i;
+  printf("Pins being used:           \n");
+  for (i = 0; i < NUM_CHANNELS; i++){
+    printf("%d, ", pin2gpio[i]);
+  }
+  printf("\n");
+  update_pwm();
 }
 
 /*
@@ -394,10 +422,12 @@ update_pwm()
 	for (i = 0; i < NUM_CHANNELS; i++) {
     // Check the pin2gpio pin has been set to avoid locking all of them as PWM.
 		if (channel_pwm[i] > 0 && pin2gpio[i]) {
+      printf("Pin added to mask: %d \n", pin2gpio[i]);
 			mask |= 1 << pin2gpio[i];
 		}
 	}
 	/*   And give that to the DMA controller to write */
+  printf("The mask: %d \n", mask);
 	ctl->sample[0] = mask;
 	
 	/* Now we go through all the samples and turn the pins off when needed */
@@ -629,9 +659,8 @@ go_go_go(void)
       if (n != 1 || nl != '\n') {
         fprintf(stderr, "Bad input: %s", lineptr);
       } else {
-        //pinwatched[servo] = 0;
         // Release Pin from pin2gpio array if the release command is received.
-        release_pin(servo);
+        release_pwm(servo);
       }
 		} else if (servo < 0){ // removed servo validation against CHANNEL_NUM no longer needed since now we used real GPIO names
 			fprintf(stderr, "Invalid channel number %d\n", servo);
