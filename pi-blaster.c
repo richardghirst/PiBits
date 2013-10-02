@@ -294,6 +294,8 @@ set_pin2gpio(int pin, float width){
 
 }
 
+// To avoid storing the same pin 2 times after one pin has been released
+// we compact the pin2gpio array so all ON PWM pins are at the begining.
 static void
 compact_pin2gpio(){
   int i, j = 0;
@@ -313,7 +315,9 @@ compact_pin2gpio(){
   }
 }
 
-
+// Pins can be relesead after being setup as PWM pins by writing the release <pin>
+// command to the /dev/pi-blaster file. We make sure to compact the pin2gpio array
+// that contains currently working pwm pins.
 static int
 release_pin2gpio(int pin)
 {
@@ -347,7 +351,8 @@ set_pin(int pin, float width)
   }
 }
 
-
+// Function make sure the pin we want to release is a valid pin, if it is
+// then calls release_pin2gpio to delete it from currently ON pins.
 static void
 release_pin(int pin)
 {
@@ -358,6 +363,8 @@ release_pin(int pin)
   }
 }
 
+// Releases the PWM pin requested (if found and valid) and updates the calls
+// update_pwm to apply the changes to the actual hardware pins.
 static void
 release_pwm(int pin){
   release_pin(pin);
