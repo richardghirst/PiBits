@@ -332,6 +332,7 @@ release_pin(int pin)
   if (is_known_pin(pin)){
     release_pin2gpio(pin);
     printf("Pins being used:           \n");
+    int i;
     for (i = 0; i < NUM_CHANNELS; i++){
             printf("%d, ", pin2gpio[i]);
     }
