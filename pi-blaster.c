@@ -281,10 +281,6 @@ set_pin2gpio(int pin, float width){
     if (pin2gpio[i] == pin || pin2gpio[i] == 0) {
       pin2gpio[i] = pin;
       channel_pwm[i] = width;
-      printf("Using Pin:                 %d\n", pin);
-      printf("PWM width param:                 %f\n", width);
-      printf("Channel PWM width:                 %f\n", channel_pwm[i]);
-      printf("Pin and Channel index:                 %d\n", i);
       established = 1;
       break;
     }
@@ -328,8 +324,6 @@ release_pin2gpio(int pin)
     if (pin2gpio[i] == pin) {
       channel_pwm[i] = 0;
       pin2gpio[i] = 0;
-      printf("Releasing Pin:                 %d\n", pin);
-      printf("Pin was using channel index:                 %d\n", i);
       released = 1;
       break;
     }
@@ -368,12 +362,6 @@ release_pin(int pin)
 static void
 release_pwm(int pin){
   release_pin(pin);
-  int i;
-  printf("Pins being used:           \n");
-  for (i = 0; i < NUM_CHANNELS; i++){
-    printf("%d, ", pin2gpio[i]);
-  }
-  printf("\n");
   update_pwm();
 }
 
@@ -383,12 +371,6 @@ static void
 set_pwm(int channel, float width)
 {
   set_pin(channel, width);
-  int i;
-  printf("Pins being used:           \n");
-  for (i = 0; i < NUM_CHANNELS; i++){
-    printf("%d, ", pin2gpio[i]);
-  }
-  printf("\n");
   update_pwm();
 }
 
@@ -429,12 +411,10 @@ update_pwm()
 	for (i = 0; i < NUM_CHANNELS; i++) {
     // Check the pin2gpio pin has been set to avoid locking all of them as PWM.
 		if (channel_pwm[i] > 0 && pin2gpio[i]) {
-      printf("Pin added to mask: %d \n", pin2gpio[i]);
 			mask |= 1 << pin2gpio[i];
 		}
 	}
 	/*   And give that to the DMA controller to write */
-  printf("The mask: %d \n", mask);
 	ctl->sample[0] = mask;
 	
 	/* Now we go through all the samples and turn the pins off when needed */
