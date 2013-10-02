@@ -36,18 +36,25 @@
 
 static char VERSION[] = "0.1.0";
 
-static uint8_t pin2gpio[] = {
-	4,	// P1-7
-	17,	// P1-11
-	18,	// P1-12
-	21,	// P1-13
-	22,	// P1-15
-	23,	// P1-16
-	24,	// P1-18
-	25,	// P1-22
+// Created new known_pins with raspberry pi list of pins
+// to compare against the param received.
+static int known_pins[] = {
+        4,      // P1-7
+        17,     // P1-11
+        18,     // P1-12
+        21,     // P1-13
+        22,     // P1-15
+        23,     // P1-16
+        24,     // P1-18
+        25,     // P1-22
 };
 
-#define NUM_CHANNELS		(sizeof(pin2gpio)/sizeof(pin2gpio[0]))
+// pin2gpio array is not setup as empty to avoid locking all GPIO
+// inputs as PWM, they are set on the fly by the pin param passed.
+static uint8_t pin2gpio[8];
+
+// Set num of possible PWM channels based on the known pins size.
+#define NUM_CHANNELS    (sizeof(known_pins)/sizeof(known_pins[0]))
 
 #define DEVFILE			"/dev/pi-blaster"
 
@@ -247,13 +254,67 @@ map_peripheral(uint32_t base, uint32_t len)
 	return vaddr;
 }
 
+static int
+is_known_pin(int pin){
+        int found = 0;
+
+        int i;
+        for (i = 0; i < NUM_CHANNELS; i++) {
+                if (known_pins[i] == pin) {
+                        found = 1;
+                        printf("Found Pin:                 %d\n", pin);
+                        break;
+                }else{
+                        found = 0;
+                }
+        }
+        return(found);
+}
+
+static int
+set_pin2gpio(int pin, float width){
+        int established = 0;
+
+        int i;
+        for (i = 0; i < NUM_CHANNELS; i++) {
+                if (pin2gpio[i] == pin || pin2gpio[i] == 0) {
+                        pin2gpio[i] = pin;
+                        channel_pwm[i] = width;
+                        printf("Using Pin:                 %d\n", pin);
+                        printf("PWM width param:                 %f\n", width);
+                        printf("Channel PWM width:                 %f\n", channel_pwm[i]);
+                        printf("Pin and Channel index:                 %d\n", i);
+                        established = 1;
+                        break;
+                }
+        }
+
+        return(established);
+
+}
+
+static void
+set_pins(int pin, float width)
+{
+        if (is_known_pin(pin)){
+                set_pin2gpio(pin, width);
+        }else{
+                printf("Not a known pin for pi-blaster");
+        }
+}
+
 static void
 set_pwm(int channel, float width)
 {
-	channel_pwm[channel] = width;
-	update_pwm();
+        set_pins(channel, width);
+        int i;
+        printf("Pins being used:           \n");
+        for (i = 0; i < NUM_CHANNELS; i++){
+                printf("%d, ", pin2gpio[i]);
+        }
+        printf("\n");
+        update_pwm();
 }
-
 
 /*
  * What we need to do here is:
@@ -290,7 +351,7 @@ update_pwm()
 	/*   Now create a mask of all the pins that should be on */
 	mask = 0;
 	for (i = 0; i < NUM_CHANNELS; i++) {
-		if (channel_pwm[i] > 0) {
+		if (channel_pwm[i] > 0 && pin2gpio[i]) {
 			mask |= 1 << pin2gpio[i];
 		}
 	}
@@ -305,7 +366,7 @@ update_pwm()
 			ctl->cb[j*2].dst = phys_gpclr0;
 		mask = 0;
 		for (i = 0; i < NUM_CHANNELS; i++) {
-			if ((float)j/NUM_SAMPLES > channel_pwm[i])
+			if ((float)j/NUM_SAMPLES > channel_pwm[i] && pin2gpio[i])
 				mask |= 1 << pin2gpio[i];
 		}
 		ctl->sample[j] = mask;
@@ -385,7 +446,8 @@ init_ctrl_data(void)
 	// Calculate a mask to turn off all the servos
 	mask = 0;
 	for (i = 0; i < NUM_CHANNELS; i++)
-		mask |= 1 << pin2gpio[i];
+    if (pin2gpio[i])
+      mask |= 1 << pin2gpio[i];
 	for (i = 0; i < NUM_SAMPLES; i++)
 		ctl->sample[i] = mask;
 
@@ -481,6 +543,15 @@ init_hardware(void)
 }
 
 static void
+init_pin2gpio(void)
+{
+  int i;
+  for (i = 0; i < NUM_CHANNELS; i++)
+    pin2gpio[i] = 0;
+}
+
+
+static void
 init_channel_pwm(void)
 {
 	int i;
@@ -509,7 +580,7 @@ go_go_go(void)
 		n = sscanf(lineptr, "%d=%f%c", &servo, &value, &nl);
 		if (n !=3 || nl != '\n') {
 			fprintf(stderr, "Bad input: %s", lineptr);
-		} else if (servo < 0 || servo >= NUM_CHANNELS) {
+		} else if (servo < 0){
 			fprintf(stderr, "Invalid channel number %d\n", servo);
 		} else if (value < 0 || value > 1) {
 			fprintf(stderr, "Invalid value %f\n", value);
@@ -614,12 +685,15 @@ main(int argc, char **argv)
 	make_pagemap();
 
 	for (i = 0; i < NUM_CHANNELS; i++) {
-		gpio_set(pin2gpio[i], invert_mode);
-		gpio_set_mode(pin2gpio[i], GPIO_MODE_OUT);
+    if (pin2gpio[i]){
+      gpio_set(pin2gpio[i], invert_mode);
+      gpio_set_mode(pin2gpio[i], GPIO_MODE_OUT);
+    }
 	}
 
 	init_ctrl_data();
 	init_hardware();
+	init_pin2gpio();
 	init_channel_pwm();
 
 	unlink(DEVFILE);
