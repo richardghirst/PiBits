@@ -6,7 +6,7 @@ This project enables PWM on the GPIO pins you request of a Raspberry Pi. The tec
 This project is based on the excellent work of Tomas Sarlandie pi-blaster: https://github.com/sarfata/pi-blaster
 and the modifications/updates made by Michael Vitousek: https://github.com/mvitousek/pi-blaster
 
-Whichs project is based on the excellent work of Richard Hirst for ServoBlaster: https://github.com/richardghirst/PiBits
+Pi-blaster project is based on the excellent work of Richard Hirst for ServoBlaster: https://github.com/richardghirst/PiBits
 
 ## How to build and install
 
