@@ -331,6 +331,11 @@ release_pin(int pin)
 {
   if (is_known_pin(pin)){
     release_pin2gpio(pin);
+    printf("Pins being used:           \n");
+    for (i = 0; i < NUM_CHANNELS; i++){
+            printf("%d, ", pin2gpio[i]);
+    }
+    printf("\n");
   }else{
     printf("Not a known pin for pi-blaster");
   }
