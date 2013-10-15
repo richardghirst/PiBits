@@ -132,6 +132,7 @@ This library was developed for TBideas high power LED driver. You can read more 
 
 ## Contributors
 
+Pete Nelson (https://github.com/petiepooo)
 Edgar Siva (https://github.com/edgarsilva)
 
 ## License
