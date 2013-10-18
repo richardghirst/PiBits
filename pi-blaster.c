@@ -393,10 +393,20 @@ set_pwm(int channel, float width)
 static void
 update_pwm()
 {
+
+	int i, j;
+
+	for (i = 0; i < NUM_CHANNELS; i++) {
+    // Check the pin2gpio pin has been set to avoid locking all of them as PWM.
+    if (pin2gpio[i]){
+      gpio_set(pin2gpio[i], invert_mode);
+      gpio_set_mode(pin2gpio[i], GPIO_MODE_OUT);
+    }
+	}
+
 	uint32_t phys_gpclr0 = 0x7e200000 + 0x28;
 	uint32_t phys_gpset0 = 0x7e200000 + 0x1c;
 	struct ctl *ctl = (struct ctl *)virtbase;
-	int i, j;
 	uint32_t mask;
 	
 	/* First we turn on the channels that need to be on */
@@ -506,9 +516,7 @@ init_ctrl_data(void)
 	// Calculate a mask to turn off all the servos
 	mask = 0;
 	for (i = 0; i < NUM_CHANNELS; i++){
-    // Check the pin2gpio pin has been set to avoid locking all of them as PWM.
-    if (pin2gpio[i])
-      mask |= 1 << pin2gpio[i];
+    mask |= 1 << known_pins[i];
   }
 	for (i = 0; i < NUM_SAMPLES; i++)
 		ctl->sample[i] = mask;
@@ -724,8 +732,6 @@ parseargs(int argc, char **argv)
 int
 main(int argc, char **argv)
 {
-	int i;
-
 	parseargs(argc, argv);
 
 	printf("Using hardware:                 %5s\n", delay_hw == DELAY_VIA_PWM ? "PWM" : "PCM");
@@ -753,19 +759,11 @@ main(int argc, char **argv)
 
 	make_pagemap();
 
-	for (i = 0; i < NUM_CHANNELS; i++) {
-    // Check the pin2gpio pin has been set to avoid locking all of them as PWM.
-    if (pin2gpio[i]){
-      gpio_set(pin2gpio[i], invert_mode);
-      gpio_set_mode(pin2gpio[i], GPIO_MODE_OUT);
-    }
-	}
-
 	init_ctrl_data();
 	init_hardware();
+	init_channel_pwm();
   // Init pin2gpio array with 0/false values to avoid locking all of them as PWM.
 	init_pin2gpio();
-	init_channel_pwm();
 
 	unlink(DEVFILE);
 	if (mkfifo(DEVFILE, 0666) < 0)
