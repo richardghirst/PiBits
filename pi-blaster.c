@@ -281,6 +281,8 @@ set_pin2gpio(int pin, float width){
     if (pin2gpio[i] == pin || pin2gpio[i] == 0) {
       pin2gpio[i] = pin;
       channel_pwm[i] = width;
+      gpio_set(pin2gpio[i], invert_mode);
+      gpio_set_mode(pin2gpio[i], GPIO_MODE_OUT);
       established = 1;
       break;
     }
@@ -394,21 +396,12 @@ static void
 update_pwm()
 {
 
-	int i, j;
-
-	for (i = 0; i < NUM_CHANNELS; i++) {
-    // Check the pin2gpio pin has been set to avoid locking all of them as PWM.
-    if (pin2gpio[i]){
-      gpio_set(pin2gpio[i], invert_mode);
-      gpio_set_mode(pin2gpio[i], GPIO_MODE_OUT);
-    }
-	}
-
 	uint32_t phys_gpclr0 = 0x7e200000 + 0x28;
 	uint32_t phys_gpset0 = 0x7e200000 + 0x1c;
 	struct ctl *ctl = (struct ctl *)virtbase;
 	uint32_t mask;
 	
+	int i, j;
 	/* First we turn on the channels that need to be on */
 	/*   Take the first DMA Packet and set it's target to start pulse */
 	if (invert_mode)
