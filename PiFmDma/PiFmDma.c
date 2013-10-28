@@ -262,7 +262,7 @@ main(int argc, char **argv)
 
 	// Calculate the frequency control word
 	// The fractional part is stored in the lower 12 bits
-	freq_ctl = ((float)(PLLFREQ / CARRIERFREQ)) * ( 1 << 12 );
+	freq_ctl = ((float)((float)PLLFREQ / (float)CARRIERFREQ)) * ( 1 << 12 );
 		
 	dma_reg = map_peripheral(DMA_BASE, DMA_LEN);
 	pwm_reg = map_peripheral(PWM_BASE, PWM_LEN);
