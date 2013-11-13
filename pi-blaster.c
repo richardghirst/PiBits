@@ -613,6 +613,10 @@ init_pin2gpio(void)
     pin2gpio[i] = 0;
 }
 
+static void
+init_pwm(void){
+  update_pwm();
+}
 
 static void
 init_channel_pwm(void)
@@ -757,6 +761,8 @@ main(int argc, char **argv)
 	init_channel_pwm();
   // Init pin2gpio array with 0/false values to avoid locking all of them as PWM.
 	init_pin2gpio();
+  // Only calls update_pwm after ctrl_data calculates the pin mask to unlock all pins on start.
+  init_pwm(); 
 
 	unlink(DEVFILE);
 	if (mkfifo(DEVFILE, 0666) < 0)
