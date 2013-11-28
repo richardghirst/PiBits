@@ -432,11 +432,26 @@ set_servo(int servo, int width)
 	int i;
 	uint32_t mask = 1 << servo2gpio[servo];
 
-	if (width == servowidth[servo])
-		return;
-
+	/* If requested width is 0 just remove the 'turn-on' action and allow
+	 * the 'turn-off' action at the end of the current pulse to turn it
+	 * off.  Special case if current width is 100%; in that case there will
+	 * be no 'turn-off' action, so we will need to force the output off
+	 * here.
+	 */
 	if (width == 0) {
 		ctl->turnon[servo] = 0;
+		if (servowidth[servo] == NUM_SAMPLES)
+			gpio_set(servo2gpio[servo], invert ? 1 : 0);
+		return;
+	}
+
+	/* Requested width is non-zero, and it is the same as the last non-zero
+	 * pulse width.  In this case just make sure the 'turn-on' action is
+	 * present, and reactivate the idle timer.
+	 */
+	if (width == servowidth[servo]) {
+		ctl->turnon[servo] = mask;
+		update_idle_time(servo);
 		return;
 	}
 
