@@ -414,7 +414,8 @@ uint8_t MPU6050::dmpInitialize() {
 
             printf("Current FIFO count=%d\n", fifoCount);
             DEBUG_PRINTLN(fifoCount);
-            getFIFOBytes(fifoBuffer, fifoCount);
+            if (fifoCount > 0)
+		getFIFOBytes(fifoBuffer, fifoCount);
 
             DEBUG_PRINTLN(F("Setting motion detection threshold to 2..."));
             setMotionDetectionThreshold(2);
