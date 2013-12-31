@@ -3,12 +3,13 @@
 all:	servod
 
 servod:	servod.c
-	gcc -Wall -g -O2 -o servod servod.c
+	gcc -Wall -g -O2 -o servod servod.c -lm
 
 install: servod
 	[ "`id -u`" = "0" ] || { echo "Must be run as root"; exit 1; }
 	cp -f servod /usr/local/sbin
 	cp -f init-script /etc/init.d/servoblaster
+	chmod 755 /etc/init.d/servoblaster
 	update-rc.d servoblaster defaults 92 08
 	/etc/init.d/servoblaster start
 

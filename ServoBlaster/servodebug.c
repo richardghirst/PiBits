@@ -35,6 +35,11 @@
 #define BCM2708_DMA_RESET		(1<<31)
 #define BCM2708_DMA_INT			(1<<2)
 
+#define DMA_CHAN_SIZE		0x100
+#define DMA_CHAN_MIN		0
+#define DMA_CHAN_MAX		14
+#define DMA_CHAN_DEFAULT	14
+
 #define DMA_CS			(0x00/4)
 #define DMA_CONBLK_AD		(0x04/4)
 #define DMA_DEBUG		(0x20/4)
@@ -42,7 +47,7 @@
 #define GPIO_BASE		0x20200000
 #define GPIO_LEN		0xB4
 #define DMA_BASE		0x20007000
-#define DMA_LEN			0x24
+#define DMA_LEN			DMA_CHAN_SIZE * (DMA_CHAN_MAX+1)
 #define PWM_BASE		0x2020C000
 #define PWM_LEN			0x28
 #define CLK_BASE	        0x20101000
@@ -82,6 +87,8 @@ static volatile uint32_t *pwm_reg;
 static volatile uint32_t *clk_reg;
 static volatile uint32_t *dma_reg;
 static volatile uint32_t *tick_reg;
+
+static uint32_t dma_chan = DMA_CHAN_DEFAULT;
 
 static uint8_t servo2gpio[] = {
                 4,      // P1-7
@@ -155,6 +162,7 @@ main(int argc, char **argv)
 	printf("  sudo chrt 1 ./servodebug\n\n");
 	gpio_reg = map_peripheral(GPIO_BASE, GPIO_LEN);
 	dma_reg = map_peripheral(DMA_BASE, DMA_LEN);
+	dma_reg += dma_chan * DMA_CHAN_SIZE / sizeof(uint32_t);
 	pwm_reg = map_peripheral(PWM_BASE, PWM_LEN);
 	clk_reg = map_peripheral(CLK_BASE, CLK_LEN);
 	tick_reg = map_peripheral(TICK_BASE, TICK_LEN);
