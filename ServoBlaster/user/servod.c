@@ -758,11 +758,13 @@ parse_width(int servo, char *width_arg)
 			width = servo_min_ticks;
 	}
 
-	if (width < servo_min_ticks || width > servo_max_ticks) {
+	if (width == 0) {
+		return (int)width;
+	} else if (width < servo_min_ticks || width > servo_max_ticks) {
 		return -1;
+	} else {
+		return (int)width;
 	}
-
-	return (int)width;
 }
 
 static void
