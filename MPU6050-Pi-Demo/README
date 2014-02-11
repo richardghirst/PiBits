@@ -10,6 +10,9 @@ Jeff supports in this way.
 
 You need libgtkmm-3.0-dev installed in order to build the 3d demo.
 
+NOTE: If you have a revision 2 Raspberry Pi you need to edit I2Cdev.cpp
+      and change all references to "/dev/i2c-0" to read "/dev/i2c-1".
+
 'make' will create three demos:
 
 demo_raw - displays raw gyro and accel values.
