@@ -1,7 +1,7 @@
 /*
  * pi-blaster.c Multiple PWM for the Raspberry Pi
  * Copyright (c) 2013 Thomas Sarlandie <thomas@sarlandie.net>
- * 
+ *
  * Based on the most excellent servod.c by Richard Hirst
  * Copyright (c) 2013 Richard Hirst <richardghirst@gmail.com>
  *
@@ -12,10 +12,10 @@
  */
 /*
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
- * 
+ *
  * The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE. 
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
 #include <stdio.h>
@@ -45,7 +45,7 @@ static uint8_t known_pins[] = {
 #if REVISION == 2
         27,     // P1-13
 #else
-	21,     // P1-13
+        21,     // P1-13
 #endif
         22,     // P1-15
         23,     // P1-16
@@ -388,7 +388,7 @@ set_pwm(int channel, float width)
  * For the cpb packets (The DMA control packet)
  *  -> cbp[0]->dst = gpset0: set   the pwms that are active
  *  -> cbp[*]->dst = gpclr0: clear when the sample has a value
- * 
+ *
  * For the samples     (The value that is written by the DMA command to cbp[n]->dst)
  *  -> dp[0] = mask of the pwms that are active
  *  -> dp[n] = mask of the pwm to stop at time n
@@ -404,7 +404,7 @@ update_pwm()
 	uint32_t phys_gpset0 = 0x7e200000 + 0x1c;
 	struct ctl *ctl = (struct ctl *)virtbase;
 	uint32_t mask;
-	
+
 	int i, j;
 	/* First we turn on the channels that need to be on */
 	/*   Take the first DMA Packet and set it's target to start pulse */
@@ -423,7 +423,7 @@ update_pwm()
 	}
 	/*   And give that to the DMA controller to write */
 	ctl->sample[0] = mask;
-	
+
 	/* Now we go through all the samples and turn the pins off when needed */
 	for (j = 1; j < NUM_SAMPLES; j++) {
 		if (invert_mode)
@@ -509,7 +509,7 @@ init_ctrl_data(void)
 		phys_fifo_addr = (PCM_BASE | 0x7e000000) + 0x04;
 
 	memset(ctl->sample, 0, sizeof(ctl->sample));
-	
+
 	// Calculate a mask to turn off all the servos
 	mask = 0;
 	for (i = 0; i < NUM_CHANNELS; i++){
@@ -519,7 +519,7 @@ init_ctrl_data(void)
 		ctl->sample[i] = mask;
 
 	/* Initialize all the DMA commands. They come in pairs.
-	 *  - 1st command copies a value from the sample memory to a destination 
+	 *  - 1st command copies a value from the sample memory to a destination
 	 *    address which can be either the gpclr0 register or the gpset0 register
 	 *  - 2nd command waits for a trigger from an external source (PWM or PCM)
 	 */
@@ -644,7 +644,7 @@ go_go_go(void)
 	for (;;) {
 		int n, servo;
 		float value;
-		
+
 		if ((n = getline(&lineptr, &linelen, fp)) < 0)
 			continue;
 		//fprintf(stderr, "[%d]%s", n, lineptr);
@@ -766,7 +766,7 @@ main(int argc, char **argv)
   // Init pin2gpio array with 0/false values to avoid locking all of them as PWM.
 	init_pin2gpio();
   // Only calls update_pwm after ctrl_data calculates the pin mask to unlock all pins on start.
-  init_pwm(); 
+  init_pwm();
 
 	unlink(DEVFILE);
 	if (mkfifo(DEVFILE, 0666) < 0)
