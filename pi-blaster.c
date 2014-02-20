@@ -279,17 +279,18 @@ set_pin2gpio(int pin, float width){
   int i;
   for (i = 0; i < NUM_CHANNELS; i++) {
     if (pin2gpio[i] == pin || pin2gpio[i] == 0) {
+      if (pin2gpio[i] == 0) {
+        gpio_set(pin, invert_mode);
+        gpio_set_mode(pin, GPIO_MODE_OUT);
+      }
       pin2gpio[i] = pin;
       channel_pwm[i] = width;
-      gpio_set(pin2gpio[i], invert_mode);
-      gpio_set_mode(pin2gpio[i], GPIO_MODE_OUT);
       established = 1;
       break;
     }
   }
 
   return(established);
-
 }
 
 // To avoid storing the same pin 2 times after one pin has been released
