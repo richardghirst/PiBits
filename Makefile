@@ -1,8 +1,10 @@
 .PHONY: all
 all:	pi-blaster
 
+REVISION=$(shell egrep -q '000f$$' /proc/cpuinfo && echo 2 || echo 1)
+
 pi-blaster:	pi-blaster.c
-	gcc -Wall -g -O2 -o $@ $<
+	gcc -Wall -g -O2 -o $@ $< -DREVISION=$(REVISION)
 
 clean:
 	rm -f pi-blaster
