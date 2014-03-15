@@ -50,6 +50,9 @@
 #define MAX_SERVOS	32	/* Only 21 really, but this lets you map servo IDs
 				 * to P1 pins, if you want to
 				 */
+
+#define MAX_GPIO	31	/* Max GPIO index is 31 on P5 rev2 */
+
 #define MAX_MEMORY_USAGE	(16*1024*1024)	/* Somewhat arbitrary limit of 16MB */
 
 #define DEFAULT_CYCLE_TIME_US	20000
@@ -72,7 +75,7 @@
 #define DMA_LEN			DMA_CHAN_SIZE * (DMA_CHAN_MAX+1)
 #define PWM_BASE		0x2020C000
 #define PWM_LEN			0x28
-#define CLK_BASE	        0x20101000
+#define CLK_BASE	    0x20101000
 #define CLK_LEN			0xA8
 #define GPIO_BASE		0x20200000
 #define GPIO_LEN		0x100
@@ -82,13 +85,13 @@
 #define DMA_NO_WIDE_BURSTS	(1<<26)
 #define DMA_WAIT_RESP		(1<<3)
 #define DMA_D_DREQ		(1<<6)
-#define DMA_PER_MAP(x)		((x)<<16)
+#define DMA_PER_MAP(x)	((x)<<16)
 #define DMA_END			(1<<1)
 #define DMA_RESET		(1<<31)
 #define DMA_INT			(1<<2)
 
 #define DMA_CS			(0x00/4)
-#define DMA_CONBLK_AD		(0x04/4)
+#define DMA_CONBLK_AD	(0x04/4)
 #define DMA_DEBUG		(0x20/4)
 
 #define GPIO_FSEL0		(0x00/4)
@@ -96,10 +99,10 @@
 #define GPIO_CLR0		(0x28/4)
 #define GPIO_LEV0		(0x34/4)
 #define GPIO_PULLEN		(0x94/4)
-#define GPIO_PULLCLK		(0x98/4)
+#define GPIO_PULLCLK	(0x98/4)
 
-#define GPIO_MODE_IN		0
-#define GPIO_MODE_OUT		1
+#define GPIO_MODE_IN	0
+#define GPIO_MODE_OUT	1
 
 #define PWM_CTL			(0x00/4)
 #define PWM_DMAC		(0x08/4)
@@ -109,13 +112,13 @@
 #define PWMCLK_CNTL		40
 #define PWMCLK_DIV		41
 
-#define PWMCTL_MODE1		(1<<1)
-#define PWMCTL_PWEN1		(1<<0)
+#define PWMCTL_MODE1	(1<<1)
+#define PWMCTL_PWEN1	(1<<0)
 #define PWMCTL_CLRF		(1<<6)
-#define PWMCTL_USEF1		(1<<5)
+#define PWMCTL_USEF1	(1<<5)
 
-#define PWMDMAC_ENAB		(1<<31)
-#define PWMDMAC_THRSHLD		((15<<8)|(15<<0))
+#define PWMDMAC_ENAB	(1<<31)
+#define PWMDMAC_THRSHLD	((15<<8)|(15<<0))
 
 #define PCM_CS_A		(0x00/4)
 #define PCM_FIFO_A		(0x04/4)
@@ -124,7 +127,7 @@
 #define PCM_TXC_A		(0x10/4)
 #define PCM_DREQ_A		(0x14/4)
 #define PCM_INTEN_A		(0x18/4)
-#define PCM_INT_STC_A		(0x1c/4)
+#define PCM_INT_STC_A	(0x1c/4)
 #define PCM_GRAY		(0x20/4)
 
 #define PCMCLK_CNTL		38
@@ -154,34 +157,35 @@ typedef struct {
 
 static char *default_p1_pins = "7,11,12,13,15,16,18,22";
 static char *default_p5_pins = "";
+static char *gpio_pins = "";
 
 static uint8_t rev1_p1pin2gpio_map[] = {
 	DMY,	// P1-1   3v3
 	DMY,	// P1-2   5v
-	0,	// P1-3   GPIO 0 (SDA)
+	0,		// P1-3   GPIO 0 (SDA)
 	DMY,	// P1-4   5v
-	1,	// P1-5   GPIO 1 (SCL)
+	1,		// P1-5   GPIO 1 (SCL)
 	DMY,	// P1-6   Ground
-	4,	// P1-7   GPIO 4 (GPCLK0)
-	14,	// P1-8   GPIO 14 (TXD)
+	4,		// P1-7   GPIO 4 (GPCLK0)
+	14,		// P1-8   GPIO 14 (TXD)
 	DMY,	// P1-9   Ground
-	15,	// P1-10  GPIO 15 (RXD)
-	17,	// P1-11  GPIO 17
-	18,	// P1-12  GPIO 18 (PCM_CLK)
-	21,	// P1-13  GPIO 21
+	15,		// P1-10  GPIO 15 (RXD)
+	17,		// P1-11  GPIO 17
+	18,		// P1-12  GPIO 18 (PCM_CLK)
+	21,		// P1-13  GPIO 21
 	DMY,	// P1-14  Ground
-	22,	// P1-15  GPIO 22
-	23,	// P1-16  GPIO 23
+	22,		// P1-15  GPIO 22
+	23,		// P1-16  GPIO 23
 	DMY,	// P1-17  3v3
-	24,	// P1-18  GPIO 24
-	10,	// P1-19  GPIO 10 (MOSI)
+	24,		// P1-18  GPIO 24
+	10,		// P1-19  GPIO 10 (MOSI)
 	DMY,	// P1-20  Ground
-	9,	// P1-21  GPIO 9 (MISO)
-	25,	// P1-22  GPIO 25
-	11,	// P1-23  GPIO 11 (SCLK)
-	8,	// P1-24  GPIO 8 (CE0)
+	9,		// P1-21  GPIO 9 (MISO)
+	25,		// P1-22  GPIO 25
+	11,		// P1-23  GPIO 11 (SCLK)
+	8,		// P1-24  GPIO 8 (CE0)
 	DMY,	// P1-25  Ground
-	7,	// P1-26  GPIO 7 (CE1)
+	7,		// P1-26  GPIO 7 (CE1)
 };
 
 static uint8_t rev1_p5pin2gpio_map[] = {
@@ -198,39 +202,39 @@ static uint8_t rev1_p5pin2gpio_map[] = {
 static uint8_t rev2_p1pin2gpio_map[] = {
 	DMY,	// P1-1   3v3
 	DMY,	// P1-2   5v
-	2,	// P1-3   GPIO 2 (SDA)
+	2,		// P1-3   GPIO 2 (SDA)
 	DMY,	// P1-4   5v
-	3,	// P1-5   GPIO 3 (SCL)
+	3,		// P1-5   GPIO 3 (SCL)
 	DMY,	// P1-6   Ground
-	4,	// P1-7   GPIO 4 (GPCLK0)
-	14,	// P1-8   GPIO 14 (TXD)
+	4,		// P1-7   GPIO 4 (GPCLK0)
+	14,		// P1-8   GPIO 14 (TXD)
 	DMY,	// P1-9   Ground
-	15,	// P1-10  GPIO 15 (RXD)
-	17,	// P1-11  GPIO 17
-	18,	// P1-12  GPIO 18 (PCM_CLK)
-	27,	// P1-13  GPIO 27
+	15,		// P1-10  GPIO 15 (RXD)
+	17,		// P1-11  GPIO 17
+	18,		// P1-12  GPIO 18 (PCM_CLK)
+	27,		// P1-13  GPIO 27
 	DMY,	// P1-14  Ground
-	22,	// P1-15  GPIO 22
-	23,	// P1-16  GPIO 23
+	22,		// P1-15  GPIO 22
+	23,		// P1-16  GPIO 23
 	DMY,	// P1-17  3v3
-	24,	// P1-18  GPIO 24
-	10,	// P1-19  GPIO 10 (MOSI)
+	24,		// P1-18  GPIO 24
+	10,		// P1-19  GPIO 10 (MOSI)
 	DMY,	// P1-20  Ground
-	9,	// P1-21  GPIO 9 (MISO)
-	25,	// P1-22  GPIO 25
-	11,	// P1-23  GPIO 11 (SCLK)
-	8,	// P1-24  GPIO 8 (CE0)
+	9,		// P1-21  GPIO 9 (MISO)
+	25,		// P1-22  GPIO 25
+	11,		// P1-23  GPIO 11 (SCLK)
+	8,		// P1-24  GPIO 8 (CE0)
 	DMY,	// P1-25  Ground
-	7,	// P1-26  GPIO 7 (CE1)
+	7,		// P1-26  GPIO 7 (CE1)
 };
 
 static uint8_t rev2_p5pin2gpio_map[] = {
 	DMY,	// P5-1   5v0
 	DMY,	// P5-2   3v3
-	28,	// P5-3   GPIO 28 (I2C0_SDA)
-	29,	// P5-4   GPIO 29 (I2C0_SCL)
-	30,	// P5-5   GPIO 30
-	31,	// P5-6   GPIO 31
+	28,		// P5-3   GPIO 28 (I2C0_SDA)
+	29,		// P5-4   GPIO 29 (I2C0_SCL)
+	30,		// P5-5   GPIO 30
+	31,		// P5-6   GPIO 31
 	DMY,	// P5-7   Ground
 	DMY,	// P5-8   Ground
 };
@@ -1002,6 +1006,98 @@ gpio2pinname(uint8_t gpio)
 }
 
 static int
+parse_gpio_list(char *gpio, char **p1pins, char **p5pins)
+{
+	char *pins;
+	FILE *fp;
+	int servo = 0;
+	int p1mapcnt, p5mapcnt;
+	uint8_t *p1map, *p5map;
+	static char p1list[256];
+	static char p5list[256];
+
+	memset(servo2gpio, DMY, sizeof(servo2gpio));
+	memset(p1pin2servo, DMY, sizeof(p1pin2servo));
+	memset(p5pin2servo, DMY, sizeof(p5pin2servo));
+
+	if (board_rev() == 1) {
+		p1map = rev1_p1pin2gpio_map;
+		p1mapcnt = sizeof(rev1_p1pin2gpio_map);
+		p5map = rev1_p5pin2gpio_map;
+		p5mapcnt = sizeof(rev1_p5pin2gpio_map);
+	} else {
+		p1map = rev2_p1pin2gpio_map;
+		p1mapcnt = sizeof(rev2_p1pin2gpio_map);
+		p5map = rev2_p5pin2gpio_map;
+		p5mapcnt = sizeof(rev2_p5pin2gpio_map);
+	}
+	pins = gpio;
+	while (*pins) {
+		char *end;
+		uint8_t pin;
+		int gpio = (int)strtol(pins, &end, 0);
+
+		if (*end && (end == pins || *end != ','))
+			fatal("Invalid character '%c' in gpio list\n", *end);
+
+		pins = end;
+		if (*pins == ',')
+			pins++;
+
+		if (gpio == 0) {
+			servo++;
+			continue;
+		}
+
+		if (gpio < 0 || gpio > 32)
+			fatal("Invalid pin number %d in gpio list\n", gpio);
+
+		if ((pin = gpiosearch(gpio, p1map, p1mapcnt)) != 0) {
+			char *pos = strchr(p1list, 0);
+			if (pos != p1list) {
+				*pos = ',';
+				pos++;
+			}
+			sprintf(pos, "%d", pin);
+			p1pin2servo[pin] = servo;
+		}
+		else if ((pin = gpiosearch(gpio, p5map, p5mapcnt)) != 0) {
+			char *pos = strchr(p5list, 0);
+			if (pos != p5list) {
+				*pos = ',';
+				pos++;
+			}
+			sprintf(pos, "%d", pin);
+			p5pin2servo[pin] = servo;
+		}
+
+		servo2gpio[servo++] = gpio;
+		num_servos++;
+		if (servo == MAX_SERVOS)
+			fatal("Too many servos specified\n");
+	}
+
+	/* Write a cfg file so can tell which pins are used for servos */
+	fp = fopen(CFGFILE, "w");
+	if (fp) {
+		fprintf(fp, "gpio=%s\n", gpio);
+		fprintf(fp, "p1pins=%s\np5pins=%s\n", p1list, p5list);
+		fprintf(fp, "\nServo mapping:\n");
+		int i;
+		for (i = 0; i < MAX_SERVOS; i++) {
+			if (servo2gpio[i] == DMY)
+				continue;
+			fprintf(fp, "    %2d on %-5s          GPIO-%d\n", i, gpio2pinname(servo2gpio[i]), servo2gpio[i]);
+		}
+		fclose(fp);
+	}
+
+	*p1pins = p1list;
+	*p5pins = p5list;
+	return servo;
+}
+
+static int
 parse_min_max_arg(char *arg, char *name)
 {
 	char *p;
@@ -1040,7 +1136,7 @@ main(int argc, char **argv)
 	int i;
 	char *p1pins = default_p1_pins;
 	char *p5pins = default_p5_pins;
-	int p1first = 1, hadp1 = 0, hadp5 = 0;
+	int p1first = 1, hadp1 = 0, hadp5 = 0, hadgpio = 0;
 	char *servo_min_arg = NULL;
 	char *servo_max_arg = NULL;
 	char *idle_timeout_arg = NULL;
@@ -1062,6 +1158,7 @@ main(int argc, char **argv)
 			{ "help",         no_argument,       0, 'h' },
 			{ "p1pins",       required_argument, 0, '1' },
 			{ "p5pins",       required_argument, 0, '5' },
+			{ "gpio",         required_argument, 0, 'g' },
 			{ "min",          required_argument, 0, 'm' },
 			{ "max",          required_argument, 0, 'x' },
 			{ "invert",       no_argument,       0, 'i' },
@@ -1072,7 +1169,7 @@ main(int argc, char **argv)
 			{ 0,              0,                 0, 0   }
 		};
 
-		c = getopt_long(argc, argv, "mxhnt:15icsfd", long_options, &option_index);
+		c = getopt_long(argc, argv, "mxhnt:15icsfdg", long_options, &option_index);
 		if (c == -1) {
 			break;
 		} else if (c =='d') {
@@ -1096,8 +1193,8 @@ main(int argc, char **argv)
 		} else if (c == 'h') {
 			printf("\nUsage: %s <options>\n\n"
 				"Options:\n"
-                                "  --pcm               tells servod to use PCM rather than PWM hardware\n"
-                                "                      to implement delays\n"
+                "  --pcm               tells servod to use PCM rather than PWM hardware\n"
+                "                      to implement delays\n"
 				"  --idle-timeout=Nms  tells servod to stop sending servo pulses for a\n"
 				"                      given output N milliseconds after the last update\n"
 				"  --cycle-time=Nus    Control pulse cycle time in microseconds, default\n"
@@ -1110,6 +1207,7 @@ main(int argc, char **argv)
 				"                      %d steps or %dus\n"
 				"  --invert            Inverts outputs\n"
 				"  --dma-chan=N        tells servod which dma channel to use, default %d\n"
+				"  --gpio=<list>       tells servod which GPIO pins to use\n"
 				"  --p1pins=<list>     tells servod which pins on the P1 header to use\n"
 				"  --p5pins=<list>     tells servod which pins on the P5 header to use\n"
 				"\nwhere <list> defaults to \"%s\" for p1pins and\n"
@@ -1138,15 +1236,24 @@ main(int argc, char **argv)
 				DMA_CHAN_DEFAULT, default_p1_pins, default_p5_pins);
 			exit(0);
 		} else if (c == '1') {
+			if (hadgpio)
+				fatal("--p1pins cannot be used with --gpio\n");
 			p1pins = optarg;
 			hadp1 = 1;
 			if (!hadp5)
 				p1first = 1;
 		} else if (c == '5') {
+			if (hadgpio)
+				fatal("--p5pins cannot be used with --gpio\n");
 			p5pins = optarg;
 			hadp5 = 1;
 			if (!hadp1)
 				p1first = 0;
+		} else if (c == 'g') {
+			if (hadp1 || hadp5)
+				fatal("--gpio cannot be used with --p1pins or --p5pins\n");
+			hadgpio = 1;
+			gpio_pins = optarg;
 		} else {
 			fatal("Invalid parameter\n");
 		}
@@ -1154,7 +1261,10 @@ main(int argc, char **argv)
 	if (board_rev() == 1 && p5pins[0])
 		fatal("Board rev 1 does not have a P5 header\n");
 
-	parse_pin_lists(p1first, p1pins, p5pins);
+	if (hadgpio)
+		parse_gpio_list(gpio_pins, &p1pins, &p5pins);
+	else
+		parse_pin_lists(p1first, p1pins, p5pins);
 
 	if (dma_chan_arg) {
 		dma_chan = strtol(dma_chan_arg, &p, 10);
@@ -1247,7 +1357,8 @@ main(int argc, char **argv)
 	printf("Maximum width value:       %7d (%dus)\n", servo_max_ticks,
 						servo_max_ticks * step_time_us);
 	printf("Output levels:            %s\n", invert ? "Inverted" : "  Normal");
-	printf("\nUsing P1 pins:               %s\n", p1pins);
+	printf("\nUsing GPIO pins:             %s\n", gpio_pins);
+	printf("Using P1 pins:               %s\n", p1pins);
 	if (board_rev() > 1)
 		printf("Using P5 pins:               %s\n", p5pins);
 	printf("\nServo mapping:\n");
