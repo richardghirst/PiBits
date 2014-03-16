@@ -51,7 +51,7 @@
 				 * to P1 pins, if you want to
 				 */
 
-#define MAX_GPIO	31	/* Max GPIO index is 31 on P5 rev2 */
+#define MAX_GPIO	31	/* Max GPIO index of P5 rev2 is 31 */
 
 #define MAX_MEMORY_USAGE	(16*1024*1024)	/* Somewhat arbitrary limit of 16MB */
 
@@ -75,7 +75,7 @@
 #define DMA_LEN			DMA_CHAN_SIZE * (DMA_CHAN_MAX+1)
 #define PWM_BASE		0x2020C000
 #define PWM_LEN			0x28
-#define CLK_BASE	    0x20101000
+#define CLK_BASE	        0x20101000
 #define CLK_LEN			0xA8
 #define GPIO_BASE		0x20200000
 #define GPIO_LEN		0x100
@@ -85,13 +85,13 @@
 #define DMA_NO_WIDE_BURSTS	(1<<26)
 #define DMA_WAIT_RESP		(1<<3)
 #define DMA_D_DREQ		(1<<6)
-#define DMA_PER_MAP(x)	((x)<<16)
+#define DMA_PER_MAP(x)		((x)<<16)
 #define DMA_END			(1<<1)
 #define DMA_RESET		(1<<31)
 #define DMA_INT			(1<<2)
 
 #define DMA_CS			(0x00/4)
-#define DMA_CONBLK_AD	(0x04/4)
+#define DMA_CONBLK_AD		(0x04/4)
 #define DMA_DEBUG		(0x20/4)
 
 #define GPIO_FSEL0		(0x00/4)
@@ -99,10 +99,10 @@
 #define GPIO_CLR0		(0x28/4)
 #define GPIO_LEV0		(0x34/4)
 #define GPIO_PULLEN		(0x94/4)
-#define GPIO_PULLCLK	(0x98/4)
+#define GPIO_PULLCLK		(0x98/4)
 
-#define GPIO_MODE_IN	0
-#define GPIO_MODE_OUT	1
+#define GPIO_MODE_IN		0
+#define GPIO_MODE_OUT		1
 
 #define PWM_CTL			(0x00/4)
 #define PWM_DMAC		(0x08/4)
@@ -112,13 +112,13 @@
 #define PWMCLK_CNTL		40
 #define PWMCLK_DIV		41
 
-#define PWMCTL_MODE1	(1<<1)
-#define PWMCTL_PWEN1	(1<<0)
+#define PWMCTL_MODE1		(1<<1)
+#define PWMCTL_PWEN1		(1<<0)
 #define PWMCTL_CLRF		(1<<6)
-#define PWMCTL_USEF1	(1<<5)
+#define PWMCTL_USEF1		(1<<5)
 
-#define PWMDMAC_ENAB	(1<<31)
-#define PWMDMAC_THRSHLD	((15<<8)|(15<<0))
+#define PWMDMAC_ENAB		(1<<31)
+#define PWMDMAC_THRSHLD		((15<<8)|(15<<0))
 
 #define PCM_CS_A		(0x00/4)
 #define PCM_FIFO_A		(0x04/4)
@@ -127,7 +127,7 @@
 #define PCM_TXC_A		(0x10/4)
 #define PCM_DREQ_A		(0x14/4)
 #define PCM_INTEN_A		(0x18/4)
-#define PCM_INT_STC_A	(0x1c/4)
+#define PCM_INT_STC_A		(0x1c/4)
 #define PCM_GRAY		(0x20/4)
 
 #define PCMCLK_CNTL		38
@@ -162,30 +162,30 @@ static char *gpio_pins = "";
 static uint8_t rev1_p1pin2gpio_map[] = {
 	DMY,	// P1-1   3v3
 	DMY,	// P1-2   5v
-	0,		// P1-3   GPIO 0 (SDA)
+	0,	// P1-3   GPIO 0 (SDA)
 	DMY,	// P1-4   5v
-	1,		// P1-5   GPIO 1 (SCL)
+	1,	// P1-5   GPIO 1 (SCL)
 	DMY,	// P1-6   Ground
-	4,		// P1-7   GPIO 4 (GPCLK0)
-	14,		// P1-8   GPIO 14 (TXD)
+	4,	// P1-7   GPIO 4 (GPCLK0)
+	14,	// P1-8   GPIO 14 (TXD)
 	DMY,	// P1-9   Ground
-	15,		// P1-10  GPIO 15 (RXD)
-	17,		// P1-11  GPIO 17
-	18,		// P1-12  GPIO 18 (PCM_CLK)
-	21,		// P1-13  GPIO 21
+	15,	// P1-10  GPIO 15 (RXD)
+	17,	// P1-11  GPIO 17
+	18,	// P1-12  GPIO 18 (PCM_CLK)
+	21,	// P1-13  GPIO 21
 	DMY,	// P1-14  Ground
-	22,		// P1-15  GPIO 22
-	23,		// P1-16  GPIO 23
+	22,	// P1-15  GPIO 22
+	23,	// P1-16  GPIO 23
 	DMY,	// P1-17  3v3
-	24,		// P1-18  GPIO 24
-	10,		// P1-19  GPIO 10 (MOSI)
+	24,	// P1-18  GPIO 24
+	10,	// P1-19  GPIO 10 (MOSI)
 	DMY,	// P1-20  Ground
-	9,		// P1-21  GPIO 9 (MISO)
-	25,		// P1-22  GPIO 25
-	11,		// P1-23  GPIO 11 (SCLK)
-	8,		// P1-24  GPIO 8 (CE0)
+	9,	// P1-21  GPIO 9 (MISO)
+	25,	// P1-22  GPIO 25
+	11,	// P1-23  GPIO 11 (SCLK)
+	8,	// P1-24  GPIO 8 (CE0)
 	DMY,	// P1-25  Ground
-	7,		// P1-26  GPIO 7 (CE1)
+	7,	// P1-26  GPIO 7 (CE1)
 };
 
 static uint8_t rev1_p5pin2gpio_map[] = {
@@ -202,39 +202,39 @@ static uint8_t rev1_p5pin2gpio_map[] = {
 static uint8_t rev2_p1pin2gpio_map[] = {
 	DMY,	// P1-1   3v3
 	DMY,	// P1-2   5v
-	2,		// P1-3   GPIO 2 (SDA)
+	2,	// P1-3   GPIO 2 (SDA)
 	DMY,	// P1-4   5v
-	3,		// P1-5   GPIO 3 (SCL)
+	3,	// P1-5   GPIO 3 (SCL)
 	DMY,	// P1-6   Ground
-	4,		// P1-7   GPIO 4 (GPCLK0)
-	14,		// P1-8   GPIO 14 (TXD)
+	4,	// P1-7   GPIO 4 (GPCLK0)
+	14,	// P1-8   GPIO 14 (TXD)
 	DMY,	// P1-9   Ground
-	15,		// P1-10  GPIO 15 (RXD)
-	17,		// P1-11  GPIO 17
-	18,		// P1-12  GPIO 18 (PCM_CLK)
-	27,		// P1-13  GPIO 27
+	15,	// P1-10  GPIO 15 (RXD)
+	17,	// P1-11  GPIO 17
+	18,	// P1-12  GPIO 18 (PCM_CLK)
+	27,	// P1-13  GPIO 27
 	DMY,	// P1-14  Ground
-	22,		// P1-15  GPIO 22
-	23,		// P1-16  GPIO 23
+	22,	// P1-15  GPIO 22
+	23,	// P1-16  GPIO 23
 	DMY,	// P1-17  3v3
-	24,		// P1-18  GPIO 24
-	10,		// P1-19  GPIO 10 (MOSI)
+	24,	// P1-18  GPIO 24
+	10,	// P1-19  GPIO 10 (MOSI)
 	DMY,	// P1-20  Ground
-	9,		// P1-21  GPIO 9 (MISO)
-	25,		// P1-22  GPIO 25
-	11,		// P1-23  GPIO 11 (SCLK)
-	8,		// P1-24  GPIO 8 (CE0)
+	9,	// P1-21  GPIO 9 (MISO)
+	25,	// P1-22  GPIO 25
+	11,	// P1-23  GPIO 11 (SCLK)
+	8,	// P1-24  GPIO 8 (CE0)
 	DMY,	// P1-25  Ground
-	7,		// P1-26  GPIO 7 (CE1)
+	7,	// P1-26  GPIO 7 (CE1)
 };
 
 static uint8_t rev2_p5pin2gpio_map[] = {
 	DMY,	// P5-1   5v0
 	DMY,	// P5-2   3v3
-	28,		// P5-3   GPIO 28 (I2C0_SDA)
-	29,		// P5-4   GPIO 29 (I2C0_SCL)
-	30,		// P5-5   GPIO 30
-	31,		// P5-6   GPIO 31
+	28,	// P5-3   GPIO 28 (I2C0_SDA)
+	29,	// P5-4   GPIO 29 (I2C0_SCL)
+	30,	// P5-5   GPIO 30
+	31,	// P5-6   GPIO 31
 	DMY,	// P5-7   Ground
 	DMY,	// P5-8   Ground
 };
@@ -833,6 +833,23 @@ go_go_go(void)
 						fprintf(stderr, "Invalid servo number %d\n", servo);
 					} else if (servo2gpio[servo] == DMY) {
 						fprintf(stderr, "Servo %d is not mapped to a GPIO pin\n", servo);
+					} else if (*width_arg == '?') { /* process read requests */
+						if (servowidth[servo] == 0) {
+							fprintf(stderr, "Position of servo %d is unknown\n", servo);
+						}
+						else {
+							char *parg = &width_arg[1];
+							if (*parg == '\0')
+								printf("%d\n", servowidth[servo]);
+							else if (!strcmp(parg, "us"))
+								printf("%d\n", servowidth[servo] * step_time_us);
+							else if (!strcmp(parg, "%")) {
+								width = 0.5 + 100.0 * (servowidth[servo] - servo_min_ticks)/(servo_max_ticks - servo_min_ticks);
+								printf("%d\n", width);
+							}
+							else
+								fprintf(stderr, "Invalid read request\n");
+						}
 					} else if ((width = parse_width(servo, width_arg)) < 0) {
 						fprintf(stderr, "Invalid width specified\n");
 					} else {
@@ -1019,6 +1036,8 @@ parse_gpio_list(char *gpio, char **p1pins, char **p5pins)
 	memset(servo2gpio, DMY, sizeof(servo2gpio));
 	memset(p1pin2servo, DMY, sizeof(p1pin2servo));
 	memset(p5pin2servo, DMY, sizeof(p5pin2servo));
+	memset(p1list, 0, sizeof(p1list));
+	memset(p5list, 0, sizeof(p5list));
 
 	if (board_rev() == 1) {
 		p1map = rev1_p1pin2gpio_map;
@@ -1049,9 +1068,9 @@ parse_gpio_list(char *gpio, char **p1pins, char **p5pins)
 			continue;
 		}
 
-		if (gpio < 0 || gpio > 32)
+		if (gpio < 0 || gpio > MAX_GPIO)
 			fatal("Invalid pin number %d in gpio list\n", gpio);
-
+		/* find corresponding pin and add it to a list */
 		if ((pin = gpiosearch(gpio, p1map, p1mapcnt)) != 0) {
 			char *pos = strchr(p1list, 0);
 			if (pos != p1list) {
@@ -1070,6 +1089,8 @@ parse_gpio_list(char *gpio, char **p1pins, char **p5pins)
 			sprintf(pos, "%d", pin);
 			p5pin2servo[pin] = servo;
 		}
+		if (pin == 0)
+			fatal("GPIO %d cannot be used for a servo output\n", gpio);
 
 		servo2gpio[servo++] = gpio;
 		num_servos++;
