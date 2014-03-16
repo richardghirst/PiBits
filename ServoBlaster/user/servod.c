@@ -833,6 +833,18 @@ go_go_go(void)
 						fprintf(stderr, "Invalid servo number %d\n", servo);
 					} else if (servo2gpio[servo] == DMY) {
 						fprintf(stderr, "Servo %d is not mapped to a GPIO pin\n", servo);
+					} else if (*width_arg == '?') {
+						char *parg = &width_arg[1];
+						if (*parg == '\0')
+							printf("%d\n", servowidth[servo]);
+						else if (!strcmp(parg, "us"))
+							printf("%d\n", servowidth[servo] * step_time_us);
+						else if (!strcmp(parg, "%")) {
+							width = 0.5 + 100.0 * (servowidth[servo] - servo_min_ticks)/(servo_max_ticks - servo_min_ticks);
+							printf("%d\n", width);
+						}
+						else
+							printf("Invalid width specified\n");
 					} else if ((width = parse_width(servo, width_arg)) < 0) {
 						fprintf(stderr, "Invalid width specified\n");
 					} else {
