@@ -833,7 +833,7 @@ go_go_go(void)
 						fprintf(stderr, "Invalid servo number %d\n", servo);
 					} else if (servo2gpio[servo] == DMY) {
 						fprintf(stderr, "Servo %d is not mapped to a GPIO pin\n", servo);
-					} else if (*width_arg == '?') {
+					} else if (*width_arg == '?') { /* process read requests */
 						char *parg = &width_arg[1];
 						if (*parg == '\0')
 							printf("%d\n", servowidth[servo]);
@@ -1031,6 +1031,8 @@ parse_gpio_list(char *gpio, char **p1pins, char **p5pins)
 	memset(servo2gpio, DMY, sizeof(servo2gpio));
 	memset(p1pin2servo, DMY, sizeof(p1pin2servo));
 	memset(p5pin2servo, DMY, sizeof(p5pin2servo));
+	memset(p1list, 0, sizeof(p1list));
+	memset(p5list, 0, sizeof(p5list));
 
 	if (board_rev() == 1) {
 		p1map = rev1_p1pin2gpio_map;
@@ -1061,9 +1063,9 @@ parse_gpio_list(char *gpio, char **p1pins, char **p5pins)
 			continue;
 		}
 
-		if (gpio < 0 || gpio > 32)
+		if (gpio < 0 || gpio > MAX_GPIO)
 			fatal("Invalid pin number %d in gpio list\n", gpio);
-
+		/* find corresponding pin and add it to a list */
 		if ((pin = gpiosearch(gpio, p1map, p1mapcnt)) != 0) {
 			char *pos = strchr(p1list, 0);
 			if (pos != p1list) {
@@ -1082,6 +1084,8 @@ parse_gpio_list(char *gpio, char **p1pins, char **p5pins)
 			sprintf(pos, "%d", pin);
 			p5pin2servo[pin] = servo;
 		}
+		if (pin == 0)
+			fatal("GPIO %d cannot be used for a servo output\n", gpio);
 
 		servo2gpio[servo++] = gpio;
 		num_servos++;
