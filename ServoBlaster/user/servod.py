@@ -24,11 +24,11 @@ if (os.path.exists(DEVFILE) == False):
 
 try:
 	while(True):    
-		for pos in range(6,95):
+		for pos in range(0,101):
 			servo_set(servo[0], pos)
 			servo_set(servo[1], 100 - pos)
 		time.sleep(1)
-		for pos in range(5,96):
+		for pos in range(0,101):
 			servo_set(servo[0], 100 - pos)
 			servo_set(servo[1], pos)
 		time.sleep(1)

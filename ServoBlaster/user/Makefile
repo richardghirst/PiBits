@@ -6,7 +6,7 @@ CFLAGS += -Wall -std=gnu99
 LIBS = -lm
 
 APP  = servod
-OBJS = servod.o
+OBJS = main.o servod.o
 
 .PHONY: all install uninstall
 
