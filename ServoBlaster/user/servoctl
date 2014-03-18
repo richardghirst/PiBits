@@ -1,0 +1,11 @@
+#!/bin/sh
+###
+# Simple servod control script
+# Make sure that you pass --port=$PORT to servod at start
+
+ADDR="127.0.0.1"
+PORT="50000"
+
+echo -n "$@"|netcat $ADDR $PORT
+
+
