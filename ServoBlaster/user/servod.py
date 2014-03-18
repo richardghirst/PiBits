@@ -18,6 +18,13 @@ def servo_set(servo, pos):
 		fd.write(cmd)
 		time.sleep(0.001)
 
+def servo_reset(servo):
+	with open(DEVFILE, 'w') as fd:
+		cmd = str(servo) + '=reset'
+		# print(cmd)
+		cmd += '\n'
+		fd.write(cmd)
+
 if (os.path.exists(DEVFILE) == False):
 	print("servod is not running!")
 	sys.exit()
@@ -35,5 +42,5 @@ try:
 except:
 	pass
 
-servo_set(servo[0], 50)
-servo_set(servo[1], 50)
+servo_reset(servo[0])
+servo_reset(servo[1])

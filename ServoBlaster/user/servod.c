@@ -44,8 +44,6 @@
 
 #include "servod.h"
 
-#define MAX_GPIO	31	/* Max GPIO index of P5 rev2 is 31 */
-
 #define MAX_MEMORY_USAGE	(16*1024*1024)	/* Somewhat arbitrary limit of 16MB */
 
 #define DEFAULT_CYCLE_TIME_US	20000
@@ -246,6 +244,7 @@ int servo_max_ticks;
 
 servo_t servos[MAX_SERVOS];
 
+uint8_t gpio2servo[NUM_GPIO];
 uint8_t p1pin2servo[NUM_P1PINS+1];
 uint8_t p5pin2servo[NUM_P5PINS+1];
 static int num_servos;
@@ -267,6 +266,7 @@ static int delay_hw = DELAY_VIA_PWM;
 static struct timeval *servo_kill_time;
 
 int daemonize = 1;
+uint16_t cmd_port = 0;
 
 static int dma_chan;
 static int idle_timeout;
@@ -275,7 +275,7 @@ static int num_samples;
 static int num_cbs;
 static int num_pages;
 static uint32_t *turnoff_mask;
-static uint32_t *turnon_mask;
+uint32_t *turnon_mask;
 static dma_cb_t *cb_base;
 
 static void set_servo_idle(int servo);
@@ -324,6 +324,19 @@ fatal(char *fmt, ...)
 	vfprintf(stderr, fmt, ap);
 	va_end(ap);
 	terminate(0);
+}
+
+/* prints to the given file descriptor */
+void
+printfd(int fdout, char *fmt, ...)
+{
+	va_list ap;
+	char buf[512];
+
+	va_start(ap, fmt);
+	vsnprintf(buf, sizeof(buf), fmt, ap);
+	write(fdout, buf, strlen(buf));
+	va_end(ap);
 }
 
 static void
@@ -691,29 +704,29 @@ init_hardware(void)
 }
 
 void
-do_debug(void)
+do_debug(int fdout)
 {
 	int i;
 	uint32_t mask = 0;
 	uint32_t last = 0xffffffff;
 
-	printf("---------------------------\n");
-	printf("Servo  Start  Width  TurnOn\n");
+	printfd(fdout, "---------------------------\n");
+	printfd(fdout, "Servo  Start  Width  TurnOn\n");
 	for (i = 0; i < MAX_SERVOS; i++) {
 		if (servos[i].gpio != DMY) {
-			printf("%3d: %6d %6d %6d\n", i, servos[i].start,
+			printfd(fdout, "%3d: %6d %6d %6d\n", i, servos[i].start,
 				servos[i].width, !!turnon_mask[i]);
 			mask |= 1 << servos[i].gpio;
 		}
 	}
-	printf("\nData:\n");
+	printfd(fdout, "\nData:\n");
 	for (i = 0; i < num_samples; i++) {
 		uint32_t curr = turnoff_mask[i] & mask;
 		if (curr != last)
-			printf("@%5d: %08x\n", i, curr);
+			printfd(fdout, "@%5d: %08x\n", i, curr);
 		last = curr;
 	}
-	printf("---------------------------\n");
+	printfd(fdout, "---------------------------\n");
 }
 
 
@@ -770,7 +783,7 @@ parse_pin_lists(int p1first, char *p1pins, char*p5pins)
 	int lst, servo = 0;
 	FILE *fp;
 
-	for(i =0; i< MAX_SERVOS; i++)
+	for(i = 0; i< MAX_SERVOS; i++)
 		servos[i].gpio = DMY;
 	memset(p1pin2servo, DMY, sizeof(p1pin2servo));
 	memset(p5pin2servo, DMY, sizeof(p5pin2servo));
@@ -887,6 +900,8 @@ parse_gpio_list(char *gpio, char **p1pins, char **p5pins)
 
 	for(int i = 0; i < MAX_SERVOS; i++)
 		servos[i].gpio = DMY;
+
+	memset(gpio2servo, DMY, sizeof(gpio2servo));
 	memset(p1pin2servo, DMY, sizeof(p1pin2servo));
 	memset(p5pin2servo, DMY, sizeof(p5pin2servo));
 	memset(p1list, 0, sizeof(p1list));
@@ -944,7 +959,7 @@ parse_gpio_list(char *gpio, char **p1pins, char **p5pins)
 		}
 		if (pin == 0)
 			fatal("GPIO %d cannot be used for a servo output\n", gpio);
-
+		gpio2servo[gpio] = servo;
 		servos[servo++].gpio = gpio;
 		num_servos++;
 		if (servo == MAX_SERVOS)
@@ -1020,22 +1035,13 @@ parse_servo_min_max(char *arg, const char *name)
 		if (*p != '-')
 			fatal("Invalid %s format specified\n", name);
 		max_ticks = strtod(p+1, &p);
-		if (*p == ',' || *p == '\0') {
-			if (min_ticks != floor(min_ticks) || max_ticks != floor(max_ticks))
-				fatal("Invalid %s value specified\n", name);
 
-			servos[servo].min_ticks = min_ticks;
-			servos[servo].max_ticks = max_ticks;
-			if (*p == '\0')
-				break;
-			continue;
-		}
 		if (*p == '%') {
 			if (min_ticks < 0 || min_ticks > 100.0 || max_ticks < 0 || max_ticks > 100.0)
 				fatal("%s value must be between 0% and 100% inclusive\n", name);
 
-			servos[servo].min_ticks = (int)(min_ticks * (double)cycle_time_us / 100.0 / servo_step_time_us);
-			servos[servo].max_ticks = (int)(max_ticks * (double)cycle_time_us / 100.0 / servo_step_time_us);
+			servos[servo].min_width = (int)(min_ticks * (double)cycle_time_us / 100.0 / servo_step_time_us);
+			servos[servo].max_width = (int)(max_ticks * (double)cycle_time_us / 100.0 / servo_step_time_us);
 			p++;
 			if (*p == '\0')
 				break;
@@ -1043,18 +1049,76 @@ parse_servo_min_max(char *arg, const char *name)
 				continue;
 			fatal("Invalid %s format specified\n", name);
 		}
-		if (p[0] == 'u' && p[1] == 's') {
-			if (min_ticks != floor(min_ticks) || max_ticks != floor(max_ticks))
-				fatal("Invalid %s value specified\n", name);
-			if (((int)min_ticks % servo_step_time_us) || ((int)max_ticks % servo_step_time_us)) {
-				fatal("%s value is not a multiple of step-time\n", name);
-			}
 
-			servos[servo].min_ticks = (int)min_ticks / servo_step_time_us;
-			servos[servo].max_ticks = (int)max_ticks / servo_step_time_us;
+		if (min_ticks != floor(min_ticks) || max_ticks != floor(max_ticks))
+			fatal("Invalid %s value specified\n", name);
+
+		if (*p == ',' || *p == '\0') {
+			servos[servo].min_width = min_ticks;
+			servos[servo].max_width = max_ticks;
 			if (*p == '\0')
 				break;
 			continue;
+		}
+		if (p[0] == 'u' && p[1] == 's') {
+			if (((int)min_ticks % servo_step_time_us) || ((int)max_ticks % servo_step_time_us))
+				fatal("%s value is not a multiple of step-time\n", name);
+
+			servos[servo].min_width = (int)min_ticks / servo_step_time_us;
+			servos[servo].max_width = (int)max_ticks / servo_step_time_us;
+			p += 2;
+			if (*p == '\0')
+				break;
+			if (*p == ',')
+				continue;
+		}
+		fatal("Invalid %s format specified\n", name);
+	}
+}
+
+static void
+parse_servo_init(char *arg, const char *name)
+{
+	char *p;
+	int servo;
+	double init;
+
+	p = arg;
+	for(p = arg; *p; p++) {
+		servo = strtol(p, &p, 10);
+		if (*p != ':')
+			fatal("Invalid %s format specified\n", name);
+		init = strtod(p+1, &p);
+		if (*p == '%') {
+			if (init < 0 || init > 100.0 )
+				fatal("%s value must be between 0% and 100% inclusive\n", name);
+
+			servos[servo].init = (int)(init / 100.0 * (double)(servos[servo].max_width - servos[servo].min_width)) + servos[servo].min_width;
+			p++;
+			if (*p == '\0')
+				break;
+			if (*p == ',')
+				continue;
+			fatal("Invalid %s format specified\n", name);
+		}
+
+		if (init != floor(init))
+			fatal("Invalid %s value specified\n", name);
+
+		if (*p == ',' || *p == '\0') {
+			servos[servo].init = (int)init;
+			if (*p == '\0')
+				break;
+			continue;
+		}
+		if (p[0] == 'u' && p[1] == 's') {
+			if (((int)init % servo_step_time_us))
+				fatal("%s value is not a multiple of step-time\n", name);
+
+			servos[servo].init = (int)(init / servo_step_time_us);
+			p += 2;
+			if (*p == '\0')
+				break;
 			if (*p == ',')
 				continue;
 		}
@@ -1072,6 +1136,7 @@ servod_init(int argc, char **argv)
 	char *servo_min_arg = NULL;
 	char *servo_max_arg = NULL;
 	char *servo_min_max = NULL;
+	char *servo_init_arg = NULL;
 	char *idle_timeout_arg = NULL;
 	char *cycle_time_arg = NULL;
 	char *step_time_arg = NULL;
@@ -1097,12 +1162,14 @@ servod_init(int argc, char **argv)
 			{ "invert",       no_argument,       0, 'i' },
 			{ "cycle-time",   required_argument, 0, 'c' },
 			{ "step-size",    required_argument, 0, 's' },
+			{ "init",         required_argument, 0, 'I' },
+			{ "port",         required_argument, 0, 'P' },
 			{ "debug",        no_argument,       0, 'f' },
 			{ "dma-chan",     required_argument, 0, 'd' },
 			{ 0,              0,                 0, 0   }
 		};
 
-		c = getopt_long(argc, argv, "mxhnt:15icsfdg", long_options, &option_index);
+		c = getopt_long(argc, argv, "mxhnt:15icsfdgIP", long_options, &option_index);
 		if (c == -1) {
 			break;
 		} else if (c =='d') {
@@ -1141,7 +1208,9 @@ servod_init(int argc, char **argv)
 				"  --min-max=servo:min-max{N|Nus|N%%} Comma separated list of min/max pulse\n"
 				"                      width range for servos. Range must be within the limit\n"
 				"                      specified by --min and --max values\n"
+				"  --init=servo:{N|Nus|N%%} Comma separated list of initial pulse width for servos\n"
 				"  --invert            Inverts outputs\n"
+				"  --port=N            TCP port number to listen for set/get commands\n"
 				"  --dma-chan=N        tells servod which dma channel to use, default %d\n"
 				"  --gpio=<list>       tells servod which GPIO pins to use\n"
 				"  --p1pins=<list>     tells servod which pins on the P1 header to use\n"
@@ -1159,11 +1228,14 @@ servod_init(int argc, char **argv)
 				"  echo 0=1500us > /dev/servoblaster     # Specify as microseconds\n"
 				"  echo P1-7=150 > /dev/servoblaster     # Using P1 pin number rather\n"
 				"  echo P1-7=50%% > /dev/servoblaster     # ... than servo number\n"
-				"  echo P1-7=1500us > /dev/servoblaster\n\n"
+				"  echo G4=1500us > /dev/servoblaster    # Using GPIO number\n\n"
 				"Servo adjustments may also be specified relative to the current\n"
 				"position by adding a '+' or '-' prefix to the width as follows:\n\n"
 				"  echo 0=+10 > /dev/servoblaster\n"
-				"  echo 0=-20 > /dev/servoblaster\n\n",
+				"  echo 0=-20 > /dev/servoblaster\n"
+				"If --init was used to specify initial position then servo can be reset\n"
+				"using following command:\n"
+				"  echo 0=reset > /dev/servoblaster\n\n",
 				argv[0],
 				DEFAULT_CYCLE_TIME_US,
 				DEFAULT_STEP_TIME_US,
@@ -1192,6 +1264,13 @@ servod_init(int argc, char **argv)
 			gpio_pins = optarg;
 		} else if (c == 'r') {
 			servo_min_max = optarg;
+		} else if (c == 'I') {
+			servo_init_arg = optarg;
+		} else if (c == 'P') {
+			uint32_t port = atoi(optarg);
+			if (port > 0xFFFF)
+				fatal("Invalid port number\n");
+			cmd_port = (uint16_t)port;
 		} else {
 			fatal("Invalid parameter\n");
 		}
@@ -1284,14 +1363,28 @@ servod_init(int argc, char **argv)
 		parse_servo_min_max(servo_min_max, "min-max");
 
 	for(i = 0; i < MAX_SERVOS; i++) {
-		if (servos[i].min_ticks == 0)
-			servos[i].min_ticks = servo_min_ticks;
-		else if (servos[i].min_ticks < servo_min_ticks)
+		/* sanity check for min width */
+		if (servos[i].min_width == 0)
+			servos[i].min_width = servo_min_ticks;
+		else if (servos[i].min_width < servo_min_ticks)
 			fatal("servo %d min value is less than minimum width\n", i);
-		if (servos[i].max_ticks == 0)
-			servos[i].max_ticks = servo_max_ticks;
-		else if (servos[i].max_ticks > servo_max_ticks)
+		/* sanity check for max width */
+		if (servos[i].max_width == 0)
+			servos[i].max_width = servo_max_ticks;
+		else if (servos[i].max_width > servo_max_ticks)
 			fatal("servo %d max value is greater than maximum width\n", i);
+	}
+
+	if (servo_init_arg)
+		parse_servo_init(servo_init_arg, "init");
+
+	for(i = 0; i < MAX_SERVOS; i++) {
+		/* sanity check for initial width */
+		if (servos[i].init != 0) {
+			if ((servos[i].init < servos[i].min_width) || (servos[i].init > servos[i].max_width))
+				fatal("servo %d init value %d is outside of min/max limits %d/%d\n", 
+					i, servos[i].init, servos[i].min_width, servos[i].max_width);
+		}
 	}
 
 	printf("\nBoard revision:            %7d\n", board_rev());
@@ -1314,12 +1407,16 @@ servod_init(int argc, char **argv)
 	if (board_rev() > 1)
 		printf("Using P5 pins:               %s\n", p5pins);
 	printf("\nServo mapping:\n");
+	printf("     #    Header-pin     GPIO      Range, us     Init, us\n");
 	for (i = 0; i < MAX_SERVOS; i++) {
 		if (servos[i].gpio == DMY)
 			continue;
-		printf("    %2d on %-5s          GPIO-%d %7d-%-dus\n", 
+		printf("    %2d on %-5s          GPIO-%d %7d-%-7d",
 			i, gpio2pinname(servos[i].gpio), servos[i].gpio,
-			servos[i].min_ticks * servo_step_time_us, servos[i].max_ticks * servo_step_time_us);
+			servos[i].min_width * servo_step_time_us, servos[i].max_width * servo_step_time_us);
+		if (servos[i].init)
+			printf(" %d", servos[i].init * servo_step_time_us);
+		printf("\n");
 	}
 	printf("\n");
 
@@ -1394,6 +1491,10 @@ servod_init(int argc, char **argv)
 		fatal("servod: Failed to create %s: %m\n", DEVFILE);
 	if (chmod(DEVFILE, 0666) < 0)
 		fatal("servod: Failed to set permissions on %s: %m\n", DEVFILE);
+
+	for(i = 0; i < MAX_SERVOS; i++) {
+		reset_servo(i);
+	}
 
 	return 0;
 }
