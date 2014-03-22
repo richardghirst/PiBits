@@ -32,6 +32,7 @@ extern "C"
 #endif
 
 #define DEVFILE	"/dev/servoblaster"
+#define CFGFILE	"/dev/servoblaster-cfg"
 
 #define DMY	255	/* Used to represent an invalid P1 pin, or unmapped servo */
 
@@ -54,29 +55,103 @@ typedef struct servo_s {
 }servo_t;
 
 extern servo_t servos[];
-extern uint32_t *turnon_mask;
 
-extern int daemonize;
-extern uint16_t cmd_port;
+#define DEFAULT_CYCLE_TIME_US	20000
+#define DEFAULT_STEP_TIME_US	10
+#define DEFAULT_SERVO_MIN_US	500
+#define DEFAULT_SERVO_MAX_US	2500
+#define DMA_CHAN_DEFAULT		14
 
+#define DMA_CHAN_MIN	0
+#define DMA_CHAN_MAX	14
+
+#define DELAY_VIA_PWM	0
+#define DELAY_VIA_PCM	1
+
+// Servoblaster configuration structure. Must be filled in by
+// int servod_args(int argc, char **argv, servo_cfg_t *cfg) or
+// manually before calling servod_init();
+
+// cycle_time_us is the pulse cycle time per servo, in microseconds.
+// Typically it should be 20ms, or 20000us.
+
+// step_time_us is the pulse width increment granularity, again in microseconds.
+// Setting step_time_us too low will likely cause problems as the DMA controller
+// will use too much memory bandwidth.  10us is a good value, though you
+// might be ok setting it as low as 2us.
+typedef struct servo_cfg_s {
+	int cycle_time_us;
+	int servo_step_time_us;
+	int servo_min_ticks;
+	int servo_max_ticks;
+	/* if set get_next_idle_timeout() must be called periodically to turn off servos */
+	int idle_timeout;
+	int restore_gpio_modes;
+	int invert;
+	int delay_hw;
+	int dma_chan;
+	void *data; /* user provided data */
+}servod_cfg_t;
+
+/* gpio-to-servo, pin-to-servo maps for debug and command processing */
 extern uint8_t gpio2servo[];
 extern uint8_t p1pin2servo[];
 extern uint8_t p5pin2servo[];
 
-extern int servo_step_time_us;
+char *gpio2pinname(uint8_t gpio);
+int  pin2gpio(uint8_t pin, uint8_t head);
 
+/* returns pin number (> 0) and fills *head with header index */
+#define PIN_GPIO   0
+#define PIN_P1HEAD 1
+#define PIN_P5HEAD 5
+
+uint8_t gpiosearch(uint8_t gpio, uint8_t *head);
+
+/* helper functions */
+int	 board_rev(void);
 void do_debug(int fdout);
 void printfd(int fdout, char *fmt, ...);
-
 void fatal(char *fmt, ...);
-int  servod_init(int argc, char **argv);
-void set_servo(int servo, int width);
+
+/* user space servoblaster functions */
+servod_cfg_t *servod_create(void *data);
+int  servod_init(void);
+void servod_dump(int fdout);
 void get_next_idle_timeout(struct timeval *tv);
 
+#define WIDTH_TICKS		1
+#define WIDTH_MICROSEC	2
+#define WIDTH_PERCENT	3  
+#define WIDTH_PERMILLE	4 /* in tenth of a percent */
+
+#define INIT_NONE		0
+#define INIT_TICKS		1
+#define INIT_MICROSEC	2
+#define INIT_PERCENT	3
+#define INIT_PERMILLE	4
+
+/* add_servo(.):
+ * servo - index 0:MAX_SERVOS-1
+ * head  - PIN_P1HEAD, PIN_P5HEAD of PIN_GPIO
+ * pin   - pin or gpio number
+ * wtype - width type of wmin, wmax
+ *         WIDTH_TICK     width in pulse incremental steps
+ *         WIDTH_MICROSEC width in microseconds, will be rounded to pulse increment step
+ *         WIDTH_PERMILLE width in permilles of pulse cycle time
+ * wmin  - width min value
+ * wmax  - width max value
+ * itype - initial width value type, INIT_NONE, INIT_TICK, INIT_MICROSEC, INIT_PERCENT
+ * init  - initial width value (if itype is not INIT_NONE)
+ */
+int  add_servo(uint8_t servo, uint8_t head, uint8_t pin, uint8_t wtype, int wmin, int wmax, uint8_t itype, int init);
+int  get_servo_state(uint8_t servo); /* 1/0 - on/off */
+void set_servo(uint8_t servo, int width);
+
 static inline int
-reset_servo(int servo)
+reset_servo(uint8_t servo)
 {
-	if (servos[servo].init) {
+	if (servos[servo].init != -1) {
 		set_servo(servo, servos[servo].init);
 		return 0;
 	}

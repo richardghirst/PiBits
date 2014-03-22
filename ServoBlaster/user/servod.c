@@ -22,7 +22,6 @@
 
 /* TODO: Separate idle timeout handling from genuine set-to-zero requests */
 /* TODO: Add ability to specify time frame over which an adjustment should be made */
-/* TODO: Add servoctl utility to set and query servo positions, etc */
 /* TODO: Add slow-start option */
 
 #include <stdio.h>
@@ -39,28 +38,16 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <sys/mman.h>
-#include <getopt.h>
 #include <math.h>
 
 #include "servod.h"
 
 #define MAX_MEMORY_USAGE	(16*1024*1024)	/* Somewhat arbitrary limit of 16MB */
 
-#define DEFAULT_CYCLE_TIME_US	20000
-#define DEFAULT_STEP_TIME_US	10
-#define DEFAULT_SERVO_MIN_US	500
-#define DEFAULT_SERVO_MAX_US	2500
-
-#define CFGFILE			"/dev/servoblaster-cfg"
-
 #define PAGE_SIZE		4096
 #define PAGE_SHIFT		12
 
-#define DMA_CHAN_SIZE		0x100
-#define DMA_CHAN_MIN		0
-#define DMA_CHAN_MAX		14
-#define DMA_CHAN_DEFAULT	14
-
+#define DMA_CHAN_SIZE	0x100
 #define DMA_BASE		0x20007000
 #define DMA_LEN			DMA_CHAN_SIZE * (DMA_CHAN_MAX+1)
 #define PWM_BASE		0x2020C000
@@ -123,9 +110,6 @@
 #define PCMCLK_CNTL		38
 #define PCMCLK_DIV		39
 
-#define DELAY_VIA_PWM	0
-#define DELAY_VIA_PCM	1
-
 #define ROUNDUP(val, blksz)	(((val)+((blksz)-1)) & ~(blksz-1))
 
 typedef struct {
@@ -137,18 +121,39 @@ typedef struct {
 	uint32_t physaddr;
 } page_map_t;
 
-/* Define which P1 header pins to use by default.  These are the eight standard
- * GPIO pins (those coloured green in the diagram on this page:
- *    http://elinux.org/Rpi_Low-level_peripherals
- *
- * Which P1 header pins are actually used can be overridden via command line
- * parameter '--p1pins=...'.
- */
+static servod_cfg_t servod_cfg;
+servo_t servos[MAX_SERVOS];
 
-static char *default_p1_pins = "7,11,12,13,15,16,18,22";
-static char *default_p5_pins = "";
-static char *gpio_pins = "";
+uint8_t gpio2servo[NUM_GPIO];
+uint8_t p1pin2servo[NUM_P1PINS+1];
+uint8_t p5pin2servo[NUM_P5PINS+1];
 
+static page_map_t *page_map;
+
+static uint8_t *virtbase;
+static uint8_t *virtcached;
+
+static volatile uint32_t *pwm_reg;
+static volatile uint32_t *pcm_reg;
+static volatile uint32_t *clk_reg;
+static volatile uint32_t *dma_reg;
+static volatile uint32_t *gpio_reg;
+
+static struct timeval *servo_kill_time;
+
+int daemonize = 1;
+
+static int num_samples;
+static int num_cbs;
+static int num_pages;
+static uint32_t *turnoff_mask;
+static uint32_t *turnon_mask;
+static dma_cb_t *cb_base;
+
+static void set_servo_idle(int servo);
+static void gpio_set_mode(uint32_t gpio, uint8_t mode);
+
+/* GPIO to RPi headers map */
 static uint8_t rev1_p1pin2gpio_map[] = {
 	DMY,	// P1-1   3v3
 	DMY,	// P1-2   5v
@@ -229,58 +234,8 @@ static uint8_t rev2_p5pin2gpio_map[] = {
 	DMY,	// P5-8   Ground
 };
 
-// cycle_time_us is the pulse cycle time per servo, in microseconds.
-// Typically it should be 20ms, or 20000us.
-
-// step_time_us is the pulse width increment granularity, again in microseconds.
-// Setting step_time_us too low will likely cause problems as the DMA controller
-// will use too much memory bandwidth.  10us is a good value, though you
-// might be ok setting it as low as 2us.
-
-static int cycle_time_us;
-int servo_step_time_us;
-int servo_min_ticks;
-int servo_max_ticks;
-
-servo_t servos[MAX_SERVOS];
-
-uint8_t gpio2servo[NUM_GPIO];
-uint8_t p1pin2servo[NUM_P1PINS+1];
-uint8_t p5pin2servo[NUM_P5PINS+1];
-static int num_servos;
-static int restore_gpio_modes;
-
-page_map_t *page_map;
-
-static uint8_t *virtbase;
-static uint8_t *virtcached;
-
-static volatile uint32_t *pwm_reg;
-static volatile uint32_t *pcm_reg;
-static volatile uint32_t *clk_reg;
-static volatile uint32_t *dma_reg;
-static volatile uint32_t *gpio_reg;
-
-static int delay_hw = DELAY_VIA_PWM;
-
-static struct timeval *servo_kill_time;
-
-int daemonize = 1;
-uint16_t cmd_port = 0;
-
-static int dma_chan;
-static int idle_timeout;
-static int invert = 0;
-static int num_samples;
-static int num_cbs;
-static int num_pages;
-static uint32_t *turnoff_mask;
-uint32_t *turnon_mask;
-static dma_cb_t *cb_base;
-
-static void set_servo_idle(int servo);
-static void gpio_set_mode(uint32_t gpio, uint8_t mode);
-static char *gpio2pinname(uint8_t gpio);
+static uint8_t *p1pin2gpio_map;
+static uint8_t *p5pin2gpio_map;
 
 static void
 udelay(int us)
@@ -300,11 +255,11 @@ terminate(int dummy)
 			if (servos[i].gpio != DMY)
 				set_servo(i, 0);
 		}
-		udelay(cycle_time_us);
+		udelay(servod_cfg.cycle_time_us);
 		dma_reg[DMA_CS] = DMA_RESET;
 		udelay(10);
 	}
-	if (restore_gpio_modes) {
+	if (servod_cfg.restore_gpio_modes) {
 		for (i = 0; i < MAX_SERVOS; i++) {
 			if (servos[i].gpio != DMY)
 				gpio_set_mode(servos[i].gpio, servos[i].gpiomode);
@@ -339,6 +294,78 @@ printfd(int fdout, char *fmt, ...)
 	va_end(ap);
 }
 
+uint8_t gpiosearch(uint8_t gpio, uint8_t *p)
+{
+	/* First search P1 pins */
+	uint8_t *map = p1pin2gpio_map;
+	int len = NUM_P1PINS + 1;
+	while (--len) {
+		if (map[len] == gpio) {
+			if (p) *p = PIN_P1HEAD;
+			return len+1;
+		}
+	}
+	/* Search P5 pins */
+	map = p5pin2gpio_map;
+	len = NUM_P5PINS + 1;
+	while (--len) {
+		if (map[len] == gpio) {
+			if (p) *p = PIN_P5HEAD;
+			return len+1;
+		}
+	}
+
+	/* Not found */
+	return 0;
+}
+
+/* Map pin+header to GPIO 
+ * Return value:
+ *     -1 in pin/head invalid
+ *    DMY if GPIO is invalid
+ *    GPIO index on success
+ */
+int pin2gpio(uint8_t pin, uint8_t head)
+{
+	int len;
+	uint8_t *map;
+	
+	if (head == PIN_P1HEAD) {
+		map = p1pin2gpio_map;
+		len = NUM_P1PINS + 1;
+	}
+	else if (head == PIN_P5HEAD) {
+		map = p5pin2gpio_map;
+		len = NUM_P5PINS + 1;
+	}
+	else
+		return -1;
+
+	if (pin > len)
+		return -1;
+
+	return map[pin -1];
+}
+
+char *gpio2pinname(uint8_t gpio)
+{
+	static char res[16];
+	uint8_t pin, head;
+
+	if ((pin = gpiosearch(gpio, &head))) {
+		sprintf(res, "P%d-%d", head, pin);
+		return res;
+	}
+
+	fatal("Cannot map GPIO %d to a header pin\n", gpio);
+	return NULL;
+}
+
+int get_servo_state(uint8_t servo)
+{
+	return !!turnon_mask[servo];
+}
+
 static void
 init_idle_timers(void)
 {
@@ -350,12 +377,12 @@ init_idle_timers(void)
 static void
 update_idle_time(int servo)
 {
-	if (idle_timeout == 0)
+	if (servod_cfg.idle_timeout == 0)
 		return;
 
 	gettimeofday(servo_kill_time + servo, NULL);
-	servo_kill_time[servo].tv_sec += idle_timeout / 1000;
-	servo_kill_time[servo].tv_usec += (idle_timeout % 1000) * 1000;
+	servo_kill_time[servo].tv_sec += servod_cfg.idle_timeout / 1000;
+	servo_kill_time[servo].tv_usec += (servod_cfg.idle_timeout % 1000) * 1000;
 	while (servo_kill_time[servo].tv_usec >= 1000000) {
 		servo_kill_time[servo].tv_usec -= 1000000;
 		servo_kill_time[servo].tv_sec++;
@@ -369,6 +396,11 @@ get_next_idle_timeout(struct timeval *tv)
 	struct timeval now;
 	struct timeval min = { 60, 0 };
 	long this_diff, min_diff;
+
+	if (servod_cfg.idle_timeout == 0) {
+		*tv = min;
+		return;
+	}
 
 	gettimeofday(&now, NULL);
 	for (i = 0; i < MAX_SERVOS; i++) {
@@ -454,7 +486,7 @@ set_servo_idle(int servo)
 	 */
 	turnon_mask[servo] = 0;
 	if (servos[servo].width == num_samples)
-		gpio_set(servos[servo].gpio, invert ? 1 : 0);
+		gpio_set(servos[servo].gpio, servod_cfg.invert ? 1 : 0);
 }
 
 /* Carefully add or remove bits from the turnoff_mask such that regardless
@@ -468,7 +500,7 @@ set_servo_idle(int servo)
  * mask appropriately at the end of this function.
  */
 void
-set_servo(int servo, int width)
+set_servo(uint8_t servo, int width)
 {
 	volatile uint32_t *dp;
 	int i;
@@ -505,6 +537,105 @@ set_servo(int servo, int width)
 		turnon_mask[servo] = mask;
 	}
 	update_idle_time(servo);
+}
+
+/* add_servo(.):
+ * servo - index 0:MAX_SERVOS-1
+ * head  - PIN_P1HEAD, PIN_P5HEAD of PIN_GPIO
+ * pin   - pin or gpio number
+ * wtype - width type of wmin, wmax
+ *         WIDTH_TICK     width in pulse incremental steps
+ *         WIDTH_MICROSEC width in microseconds, will be rounded to pulse increment step
+ *         WIDTH_PERMILLE width in permilles of pulse cycle time 
+ * wmin  - width min value
+ * wmax  - width max value
+ * itype - initial width value type, INIT_NONE, INIT_TICK, INIT_MICROSEC, INIT_PERCENT
+ * init  - initial width value (if itype is not INIT_NONE)
+ */
+int add_servo(uint8_t servo, uint8_t head, uint8_t pin, uint8_t wtype, int wmin, int wmax, uint8_t itype, int init)
+{
+	int i, gpio = pin;
+
+	/* lot of sanity checks...*/
+	/* check index validity */
+	if (servo >= MAX_SERVOS || servos[servo].gpio != DMY)
+		return -1;
+
+	if (head != PIN_GPIO) {
+		gpio = pin2gpio(pin, head);
+		if (gpio < 0 || gpio == DMY)
+			return -1;
+	}
+
+	/* check gpio validity */
+	pin = gpiosearch(gpio, &head);
+	if (pin == 0)
+		return -1;
+	uint8_t *pin2servo = (head == PIN_P1HEAD) ? p1pin2servo : p5pin2servo;
+	/* check if gpio already in use */
+	for(i = 0; i < MAX_SERVOS; i++) {
+		if (servos[i].gpio == gpio)
+			return -1;
+	}
+
+	/* convert width to ticks if needed */
+	switch(wtype) {
+	case WIDTH_TICKS:
+		break;
+	case WIDTH_MICROSEC:
+		wmin = wmin / servod_cfg.servo_step_time_us;
+		wmax = wmax / servod_cfg.servo_step_time_us;
+		break;
+	case WIDTH_PERCENT:
+		wmin = (int)((double)wmin * ((0.01 * servod_cfg.cycle_time_us) / servod_cfg.servo_step_time_us) + 0.5);
+		wmax = (int)((double)wmax * ((0.01 * servod_cfg.cycle_time_us) / servod_cfg.servo_step_time_us) + 0.5);
+		break;
+	case WIDTH_PERMILLE:
+		wmin = (int)((double)wmin * ((0.001 * servod_cfg.cycle_time_us) / servod_cfg.servo_step_time_us) + 0.5);
+		wmax = (int)((double)wmax * ((0.001 * servod_cfg.cycle_time_us) / servod_cfg.servo_step_time_us) + 0.5);
+		break;
+	default:
+		return -1;
+	}
+
+	/* check pulse boundaries */
+	if ((wmin < servod_cfg.servo_min_ticks) || (wmax > servod_cfg.servo_max_ticks))
+		return -1;
+
+	/* check init position */
+	switch(itype) {
+	case INIT_NONE:
+	case INIT_TICKS:
+		break;
+	case INIT_MICROSEC:
+		init = init * servod_cfg.servo_step_time_us;
+		break;
+	case INIT_PERCENT:
+		init = (wmax - wmin)/100.0 * init + wmin;
+		break;
+	case INIT_PERMILLE:
+		init = (wmax - wmin)/1000.0 * init + wmin;
+		break;
+	default:
+		return -1;
+	}
+
+	servos[servo].gpio = gpio;
+	servos[servo].min_width = wmin;
+	servos[servo].max_width = wmax;
+	if (itype != INIT_NONE) {
+		servos[servo].init = init;
+		if ((init < wmin) || (init > wmax))
+			return -1;
+	}
+	else
+		servos[servo].init = -1;
+
+	/* add mappings */
+	gpio2servo[gpio] = servo;
+	pin2servo[pin] = servo;
+
+	return 0;
 }
 
 static void
@@ -574,7 +705,7 @@ init_ctrl_data(void)
 	int servo, i, numservos = 0, curstart = 0;
 	uint32_t maskall = 0;
 
-	if (invert) {
+	if (servod_cfg.invert) {
 		phys_gpclr0 = 0x7e200000 + 0x1c;
 		phys_gpset0 = 0x7e200000 + 0x28;
 	} else {
@@ -582,7 +713,7 @@ init_ctrl_data(void)
 		phys_gpset0 = 0x7e200000 + 0x1c;
 	}
 
-	if (delay_hw == DELAY_VIA_PWM) {
+	if (servod_cfg.delay_hw == DELAY_VIA_PWM) {
 		phys_fifo_addr = (PWM_BASE | 0x7e000000) + 0x18;
 		cbinfo = DMA_NO_WIDE_BURSTS | DMA_WAIT_RESP | DMA_D_DREQ | DMA_PER_MAP(5);
 	} else {
@@ -606,7 +737,7 @@ init_ctrl_data(void)
 	for (servo = 0; servo < MAX_SERVOS; servo++) {
 		if (servos[servo].gpio != DMY) {
 			servos[servo].start = curstart;
-			curstart += num_samples / num_servos;
+			curstart += num_samples / numservos;
 		}
 	}
 
@@ -650,7 +781,7 @@ init_ctrl_data(void)
 static void
 init_hardware(void)
 {
-	if (delay_hw == DELAY_VIA_PWM) {
+	if (servod_cfg.delay_hw == DELAY_VIA_PWM) {
 		// Initialise PWM
 		pwm_reg[PWM_CTL] = 0;
 		udelay(10);
@@ -660,7 +791,7 @@ init_hardware(void)
 		udelay(100);
 		clk_reg[PWMCLK_CNTL] = 0x5A000016;		// Source=PLLD and enable
 		udelay(100);
-		pwm_reg[PWM_RNG1] = servo_step_time_us;
+		pwm_reg[PWM_RNG1] = servod_cfg.servo_step_time_us;
 		udelay(10);
 		pwm_reg[PWM_DMAC] = PWMDMAC_ENAB | PWMDMAC_THRSHLD;
 		udelay(10);
@@ -680,7 +811,7 @@ init_hardware(void)
 		udelay(100);
 		pcm_reg[PCM_TXC_A] = 0<<31 | 1<<30 | 0<<20 | 0<<16; // 1 channel, 8 bits
 		udelay(100);
-		pcm_reg[PCM_MODE_A] = (servo_step_time_us - 1) << 10;
+		pcm_reg[PCM_MODE_A] = (servod_cfg.servo_step_time_us - 1) << 10;
 		udelay(100);
 		pcm_reg[PCM_CS_A] |= 1<<4 | 1<<3;		// Clear FIFOs
 		udelay(100);
@@ -698,7 +829,7 @@ init_hardware(void)
 	dma_reg[DMA_DEBUG] = 7; // clear debug error flags
 	dma_reg[DMA_CS] = 0x10880001;	// go, mid priority, wait for outstanding writes
 
-	if (delay_hw == DELAY_VIA_PCM) {
+	if (servod_cfg.delay_hw == DELAY_VIA_PCM) {
 		pcm_reg[PCM_CS_A] |= 1<<2;			// Enable Tx
 	}
 }
@@ -735,7 +866,7 @@ do_debug(int fdout)
  * digits of the Revision string and treat '00' and '01' as errors, '02' and
  * '03' as rev 1, and any other hex value as rev 2.
  */
-static int
+int
 board_rev(void)
 {
 	char buf[128];
@@ -774,657 +905,146 @@ board_rev(void)
 	return rev;
 }
 
-static void
-parse_pin_lists(int p1first, char *p1pins, char*p5pins)
+void
+servod_dump(int fdout)
 {
-	char *name, *pins;
-	int i, mapcnt;
-	uint8_t *map, *pNpin2servo;
-	int lst, servo = 0;
-	FILE *fp;
+	char gpio_pins[128];
+	char p1pins[128];
+	char p5pins[128];
 
-	for(i = 0; i< MAX_SERVOS; i++)
-		servos[i].gpio = DMY;
-	memset(p1pin2servo, DMY, sizeof(p1pin2servo));
-	memset(p5pin2servo, DMY, sizeof(p5pin2servo));
-	for (lst = 0; lst < 2; lst++) {
-		if (lst == 0 && p1first) {
-			name = "P1";
-			pins = p1pins;
-			if (board_rev() == 1) {
-				map = rev1_p1pin2gpio_map;
-				mapcnt = sizeof(rev1_p1pin2gpio_map);
-			} else {
-				map = rev2_p1pin2gpio_map;
-				mapcnt = sizeof(rev2_p1pin2gpio_map);
-			}
-			pNpin2servo = p1pin2servo;
-		} else {
-			name = "P5";
+	memset(gpio_pins, 0, sizeof(gpio_pins));
+	memset(p1pins, 0, sizeof(p1pins));
+	memset(p5pins, 0, sizeof(p5pins));
+
+	int num_servos = 0;
+	/* convert gpio to pins */
+	for(int i = 0; i< MAX_SERVOS; i++) {
+		if (servos[i].gpio == DMY)
+			continue;
+		char *pos = strchr(gpio_pins, 0);
+		if (pos != gpio_pins)
+			*pos++ = ',';
+		sprintf(pos, "%d", servos[i].gpio);
+		char *pin = gpio2pinname(servos[i].gpio);
+		char *pins = p1pins;
+		if (pin[1] == '5')
 			pins = p5pins;
-			if (board_rev() == 1) {
-				map = rev1_p5pin2gpio_map;
-				mapcnt = sizeof(rev1_p5pin2gpio_map);
-			} else {
-				map = rev2_p5pin2gpio_map;
-				mapcnt = sizeof(rev2_p5pin2gpio_map);
-			}
-			pNpin2servo = p5pin2servo;
-		}
-		while (*pins) {
-			char *end;
-			long pin = strtol(pins, &end, 0);
+		pos = strchr(pins, 0);
+		if (pos != pins)
+			*pos++ = ',';
+		strcat(pos, pin + 3);
 
-			if (*end && (end == pins || *end != ','))
-				fatal("Invalid character '%c' in %s pin list\n", *end, name);
-			if (pin < 0 || pin > mapcnt)
-				fatal("Invalid pin number %d in %s pin list\n", pin, name);
-			if (servo == MAX_SERVOS)
-				fatal("Too many servos specified\n");
-			if (pin == 0) {
-				servo++;
-			} else {
-				if (map[pin-1] == DMY)
-					fatal("Pin %d on header %s cannot be used for a servo output\n", pin, name);
-				pNpin2servo[pin] = servo;
-				servos[servo++].gpio = map[pin-1];
-				num_servos++;
-			}
-			pins = end;
-			if (*pins == ',')
-				pins++;
-		}
+		num_servos++;
 	}
-	/* Write a cfg file so can tell which pins are used for servos */
-	fp = fopen(CFGFILE, "w");
-	if (fp) {
-		if (p1first)
-			fprintf(fp, "p1pins=%s\np5pins=%s\n", p1pins, p5pins);
-		else
-			fprintf(fp, "p5pins=%s\np1pins=%s\n", p5pins, p1pins);
-		fprintf(fp, "\nServo mapping:\n");
-		for (i = 0; i < MAX_SERVOS; i++) {
-			if (servos[i].gpio == DMY)
-				continue;
-			fprintf(fp, "    %2d on %-5s          GPIO-%d\n", i, gpio2pinname(servos[i].gpio), servos[i].gpio);
-		}
-		fclose(fp);
+
+	printfd(fdout, "\nBoard revision:            %7d\n", board_rev());
+	printfd(fdout, "Using hardware:                %s\n", servod_cfg.delay_hw == DELAY_VIA_PWM ? "PWM" : "PCM");
+	printfd(fdout, "Using DMA channel:         %7d\n", servod_cfg.dma_chan);
+	if (servod_cfg.idle_timeout)
+		printfd(fdout, "Idle timeout:              %7dms\n", servod_cfg.idle_timeout);
+	else
+		printfd(fdout, "Idle timeout:             Disabled\n");
+	printfd(fdout, "Number of servos:          %7d\n", num_servos);
+	printfd(fdout, "Servo cycle time:          %7dus\n", servod_cfg.cycle_time_us);
+	printfd(fdout, "Pulse increment step size: %7dus\n", servod_cfg.servo_step_time_us);
+	printfd(fdout, "Total number of steps:     %7d\n", servod_cfg.cycle_time_us / servod_cfg.servo_step_time_us);
+	printfd(fdout, "Minimum width value:       %7d (%dus, %.2f%%)\n", servod_cfg.servo_min_ticks,
+		servod_cfg.servo_min_ticks * servod_cfg.servo_step_time_us,
+		(100.0 * servod_cfg.servo_min_ticks) / (servod_cfg.cycle_time_us / servod_cfg.servo_step_time_us));
+	printfd(fdout, "Maximum width value:       %7d (%dus, %.2f%%)\n", servod_cfg.servo_max_ticks,
+		servod_cfg.servo_max_ticks * servod_cfg.servo_step_time_us,
+		(100.0 * servod_cfg.servo_max_ticks) / (servod_cfg.cycle_time_us / servod_cfg.servo_step_time_us));
+	printfd(fdout, "Output levels:            %s\n", servod_cfg.invert ? "Inverted" : "  Normal");
+	printfd(fdout, "\nUsing GPIO pins:             %s\n", gpio_pins);
+	printfd(fdout, "Using P1 pins:               %s\n", p1pins);
+	if (board_rev() > 1)
+		printfd(fdout, "Using P5 pins:               %s\n", p5pins);
+	printfd(fdout, "\nServo mapping:\n");
+	printfd(fdout, "     #    Header-pin     GPIO      Range, us     Init, us\n");
+	for (int i = 0; i < MAX_SERVOS; i++) {
+		if (servos[i].gpio == DMY)
+			continue;
+		printfd(fdout, "    %2d on %-5s          GPIO-%d %7d-%-7d",
+			i, gpio2pinname(servos[i].gpio), servos[i].gpio,
+			servos[i].min_width * servod_cfg.servo_step_time_us,
+			servos[i].max_width * servod_cfg.servo_step_time_us);
+		if (servos[i].init != -1)
+			printfd(fdout, " %d", servos[i].init * servod_cfg.servo_step_time_us);
+		printfd(fdout, "\n");
 	}
+	printfd(fdout, "\n");
 }
 
-static uint8_t
-gpiosearch(uint8_t gpio, uint8_t *map, int len)
+servod_cfg_t *servod_create(void *data)
 {
-	while (--len) {
-		if (map[len] == gpio)
-			return len+1;
-	}
-	return 0;
-}
+	int i;
 
-static char *
-gpio2pinname(uint8_t gpio)
-{
-	static char res[16];
-	uint8_t pin;
-
-	if (board_rev() == 1) {
-		if ((pin = gpiosearch(gpio, rev1_p1pin2gpio_map, sizeof(rev1_p1pin2gpio_map))))
-			sprintf(res, "P1-%d", pin);
-		else if ((pin = gpiosearch(gpio, rev1_p5pin2gpio_map, sizeof(rev1_p5pin2gpio_map))))
-			sprintf(res, "P5-%d", pin);
-		else
-			fatal("Cannot map GPIO %d to a header pin\n", gpio);
-	} else {
-		if ((pin = gpiosearch(gpio, rev2_p1pin2gpio_map, sizeof(rev2_p1pin2gpio_map))))
-			sprintf(res, "P1-%d", pin);
-		else if ((pin = gpiosearch(gpio, rev2_p5pin2gpio_map, sizeof(rev2_p5pin2gpio_map))))
-			sprintf(res, "P5-%d", pin);
-		else
-			fatal("Cannot map GPIO %d to a header pin\n", gpio);
-	}
-
-	return res;
-}
-
-static int
-parse_gpio_list(char *gpio, char **p1pins, char **p5pins)
-{
-	char *pins;
-	FILE *fp;
-	int servo = 0;
-	int p1mapcnt, p5mapcnt;
-	uint8_t *p1map, *p5map;
-	static char p1list[256];
-	static char p5list[256];
-
-	for(int i = 0; i < MAX_SERVOS; i++)
-		servos[i].gpio = DMY;
-
+	/* Initialise maps for commands handling */
 	memset(gpio2servo, DMY, sizeof(gpio2servo));
 	memset(p1pin2servo, DMY, sizeof(p1pin2servo));
 	memset(p5pin2servo, DMY, sizeof(p5pin2servo));
-	memset(p1list, 0, sizeof(p1list));
-	memset(p5list, 0, sizeof(p5list));
 
 	if (board_rev() == 1) {
-		p1map = rev1_p1pin2gpio_map;
-		p1mapcnt = sizeof(rev1_p1pin2gpio_map);
-		p5map = rev1_p5pin2gpio_map;
-		p5mapcnt = sizeof(rev1_p5pin2gpio_map);
-	} else {
-		p1map = rev2_p1pin2gpio_map;
-		p1mapcnt = sizeof(rev2_p1pin2gpio_map);
-		p5map = rev2_p5pin2gpio_map;
-		p5mapcnt = sizeof(rev2_p5pin2gpio_map);
-	}
-	pins = gpio;
-	while (*pins) {
-		char *end;
-		uint8_t pin;
-		int gpio = (int)strtol(pins, &end, 0);
-
-		if (*end && (end == pins || *end != ','))
-			fatal("Invalid character '%c' in gpio list\n", *end);
-
-		pins = end;
-		if (*pins == ',')
-			pins++;
-
-		if (gpio == 0) {
-			servo++;
-			continue;
-		}
-
-		if (gpio < 0 || gpio > MAX_GPIO)
-			fatal("Invalid pin number %d in gpio list\n", gpio);
-		/* find corresponding pin and add it to a list */
-		if ((pin = gpiosearch(gpio, p1map, p1mapcnt)) != 0) {
-			char *pos = strchr(p1list, 0);
-			if (pos != p1list) {
-				*pos = ',';
-				pos++;
-			}
-			sprintf(pos, "%d", pin);
-			p1pin2servo[pin] = servo;
-		}
-		else if ((pin = gpiosearch(gpio, p5map, p5mapcnt)) != 0) {
-			char *pos = strchr(p5list, 0);
-			if (pos != p5list) {
-				*pos = ',';
-				pos++;
-			}
-			sprintf(pos, "%d", pin);
-			p5pin2servo[pin] = servo;
-		}
-		if (pin == 0)
-			fatal("GPIO %d cannot be used for a servo output\n", gpio);
-		gpio2servo[gpio] = servo;
-		servos[servo++].gpio = gpio;
-		num_servos++;
-		if (servo == MAX_SERVOS)
-			fatal("Too many servos specified\n");
+		p1pin2gpio_map = rev1_p1pin2gpio_map;
+		p5pin2gpio_map = rev1_p5pin2gpio_map;
+	} 
+	else {
+		p1pin2gpio_map = rev2_p1pin2gpio_map;
+		p5pin2gpio_map = rev2_p5pin2gpio_map;
 	}
 
-	/* Write a cfg file so can tell which pins are used for servos */
-	fp = fopen(CFGFILE, "w");
-	if (fp) {
-		fprintf(fp, "gpio=%s\n", gpio);
-		fprintf(fp, "p1pins=%s\np5pins=%s\n", p1list, p5list);
-		fprintf(fp, "\nServo mapping:\n");
-		int i;
-		for (i = 0; i < MAX_SERVOS; i++) {
-			if (servos[i].gpio == DMY)
-				continue;
-			fprintf(fp, "    %2d on %-5s          GPIO-%d\n", i, gpio2pinname(servos[i].gpio), servos[i].gpio);
-		}
-		fclose(fp);
+	/*Initialize servos */
+	memset(servos, 0, sizeof(servos));
+	for(i = 0; i < MAX_SERVOS; i++) {
+		servos[i].gpio = DMY;
+		servos[i].init = -1;
+		servos[i].min_width = -1;
+		servos[i].max_width = -1;
 	}
 
-	*p1pins = p1list;
-	*p5pins = p5list;
-	return servo;
-}
+	/* set default configuration */
+	memset(&servod_cfg, 0, sizeof(servod_cfg));
+	servod_cfg.delay_hw = DELAY_VIA_PWM;
+	servod_cfg.dma_chan = DMA_CHAN_DEFAULT;
+	servod_cfg.cycle_time_us = DEFAULT_CYCLE_TIME_US;
+	servod_cfg.servo_step_time_us = DEFAULT_STEP_TIME_US;
+	servod_cfg.servo_min_ticks = DEFAULT_SERVO_MIN_US / DEFAULT_STEP_TIME_US;
+	servod_cfg.servo_max_ticks = DEFAULT_SERVO_MAX_US / DEFAULT_STEP_TIME_US;
+	servod_cfg.restore_gpio_modes = 1;
+	servod_cfg.data = data;
 
-static int
-parse_min_max_arg(char *arg, char *name)
-{
-	char *p;
-	double val = strtod(arg, &p);
-
-	if (*arg < '0' || *arg > '9' || val < 0) {
-		fatal("Invalid %s value specified\n", name);
-	} else if (*p == '\0') {
-		if (val != floor(val)) {
-			fatal("Invalid %s value specified\n", name);
-		}
-		return (int)val;
-	} else if (!strcmp(p, "us")) {
-		if (val != floor(val)) {
-			fatal("Invalid %s value specified\n", name);
-		}
-		if ((int)val % servo_step_time_us) {
-			fatal("%s value is not a multiple of step-time\n", name);
-		}
-		return val / servo_step_time_us;
-	} else if (!strcmp(p, "%")) {
-		if (val < 0 || val > 100.0) {
-			fatal("%s value must be between 0% and 100% inclusive\n", name);
-		}
-		return (int)(val * (double)cycle_time_us / 100.0 / servo_step_time_us);
-	} else {
-		fatal("Invalid %s value specified\n", name);
-	}
-
-	return -1;	/* Never reached */
-}
-
-static void
-parse_servo_min_max(char *arg, const char *name)
-{
-	char *p;
-	int servo;
-	double min_ticks, max_ticks;
-
-	p = arg;
-	for(p = arg; *p; p++) {
-		servo = strtol(p, &p, 10);
-		if (*p != ':')
-			fatal("Invalid %s format specified\n", name);
-		min_ticks = strtod(p+1, &p);
-		if (*p != '-')
-			fatal("Invalid %s format specified\n", name);
-		max_ticks = strtod(p+1, &p);
-
-		if (*p == '%') {
-			if (min_ticks < 0 || min_ticks > 100.0 || max_ticks < 0 || max_ticks > 100.0)
-				fatal("%s value must be between 0% and 100% inclusive\n", name);
-
-			servos[servo].min_width = (int)(min_ticks * (double)cycle_time_us / 100.0 / servo_step_time_us);
-			servos[servo].max_width = (int)(max_ticks * (double)cycle_time_us / 100.0 / servo_step_time_us);
-			p++;
-			if (*p == '\0')
-				break;
-			if (*p == ',')
-				continue;
-			fatal("Invalid %s format specified\n", name);
-		}
-
-		if (min_ticks != floor(min_ticks) || max_ticks != floor(max_ticks))
-			fatal("Invalid %s value specified\n", name);
-
-		if (*p == ',' || *p == '\0') {
-			servos[servo].min_width = min_ticks;
-			servos[servo].max_width = max_ticks;
-			if (*p == '\0')
-				break;
-			continue;
-		}
-		if (p[0] == 'u' && p[1] == 's') {
-			if (((int)min_ticks % servo_step_time_us) || ((int)max_ticks % servo_step_time_us))
-				fatal("%s value is not a multiple of step-time\n", name);
-
-			servos[servo].min_width = (int)min_ticks / servo_step_time_us;
-			servos[servo].max_width = (int)max_ticks / servo_step_time_us;
-			p += 2;
-			if (*p == '\0')
-				break;
-			if (*p == ',')
-				continue;
-		}
-		fatal("Invalid %s format specified\n", name);
-	}
-}
-
-static void
-parse_servo_init(char *arg, const char *name)
-{
-	char *p;
-	int servo;
-	double init;
-
-	p = arg;
-	for(p = arg; *p; p++) {
-		servo = strtol(p, &p, 10);
-		if (*p != ':')
-			fatal("Invalid %s format specified\n", name);
-		init = strtod(p+1, &p);
-		if (*p == '%') {
-			if (init < 0 || init > 100.0 )
-				fatal("%s value must be between 0% and 100% inclusive\n", name);
-
-			servos[servo].init = (int)(init / 100.0 * (double)(servos[servo].max_width - servos[servo].min_width)) + servos[servo].min_width;
-			p++;
-			if (*p == '\0')
-				break;
-			if (*p == ',')
-				continue;
-			fatal("Invalid %s format specified\n", name);
-		}
-
-		if (init != floor(init))
-			fatal("Invalid %s value specified\n", name);
-
-		if (*p == ',' || *p == '\0') {
-			servos[servo].init = (int)init;
-			if (*p == '\0')
-				break;
-			continue;
-		}
-		if (p[0] == 'u' && p[1] == 's') {
-			if (((int)init % servo_step_time_us))
-				fatal("%s value is not a multiple of step-time\n", name);
-
-			servos[servo].init = (int)(init / servo_step_time_us);
-			p += 2;
-			if (*p == '\0')
-				break;
-			if (*p == ',')
-				continue;
-		}
-		fatal("Invalid %s format specified\n", name);
-	}
+	return &servod_cfg;
 }
 
 int
-servod_init(int argc, char **argv)
+servod_init(void)
 {
-	int i;
-	char *p1pins = default_p1_pins;
-	char *p5pins = default_p5_pins;
-	int p1first = 1, hadp1 = 0, hadp5 = 0, hadgpio = 0;
-	char *servo_min_arg = NULL;
-	char *servo_max_arg = NULL;
-	char *servo_min_max = NULL;
-	char *servo_init_arg = NULL;
-	char *idle_timeout_arg = NULL;
-	char *cycle_time_arg = NULL;
-	char *step_time_arg = NULL;
-	char *dma_chan_arg = NULL;
-	char *p;
+	int i, numservos = 0;
 
-	setvbuf(stdout, NULL, _IOLBF, 0);
-
-	while (1) {
-		int c;
-		int option_index;
-
-		static struct option long_options[] = {
-			{ "pcm",          no_argument,       0, 'p' },
-			{ "idle-timeout", required_argument, 0, 't' },
-			{ "help",         no_argument,       0, 'h' },
-			{ "p1pins",       required_argument, 0, '1' },
-			{ "p5pins",       required_argument, 0, '5' },
-			{ "gpio",         required_argument, 0, 'g' },
-			{ "min",          required_argument, 0, 'm' },
-			{ "max",          required_argument, 0, 'x' },
-			{ "min-max",      required_argument, 0, 'r' },
-			{ "invert",       no_argument,       0, 'i' },
-			{ "cycle-time",   required_argument, 0, 'c' },
-			{ "step-size",    required_argument, 0, 's' },
-			{ "init",         required_argument, 0, 'I' },
-			{ "port",         required_argument, 0, 'P' },
-			{ "debug",        no_argument,       0, 'f' },
-			{ "dma-chan",     required_argument, 0, 'd' },
-			{ 0,              0,                 0, 0   }
-		};
-
-		c = getopt_long(argc, argv, "mxhnt:15icsfdgIP", long_options, &option_index);
-		if (c == -1) {
-			break;
-		} else if (c =='d') {
-			dma_chan_arg = optarg;
-		} else if (c == 'f') {
-			daemonize = 0;
-		} else if (c == 'p') {
-			delay_hw = DELAY_VIA_PCM;
-		} else if (c == 't') {
-			idle_timeout_arg = optarg;
-		} else if (c == 'c') {
-			cycle_time_arg = optarg;
-		} else if (c == 's') {
-			step_time_arg = optarg;
-		} else if (c == 'm') {
-			servo_min_arg = optarg;
-		} else if (c == 'x') {
-			servo_max_arg = optarg;
-		} else if (c == 'i') {
-			invert = 1;
-		} else if (c == 'h') {
-			printf("\nUsage: %s <options>\n\n"
-				"Options:\n"
-                "  --pcm               tells servod to use PCM rather than PWM hardware\n"
-                "                      to implement delays\n"
-				"  --idle-timeout=Nms  tells servod to stop sending servo pulses for a\n"
-				"                      given output N milliseconds after the last update\n"
-				"  --cycle-time=Nus    Control pulse cycle time in microseconds, default\n"
-				"                      %dus\n"
-				"  --step-size=Nus     Pulse width increment step size in microseconds,\n"
-				"                      default %dus\n"
-				"  --min={N|Nus|N%%}    specifies the minimum allowed pulse width, default\n"
-				"                      %d steps or %dus\n"
-				"  --max={N|Nus|N%%}    specifies the maximum allowed pulse width, default\n"
-				"                      %d steps or %dus\n"
-				"  --min-max=servo:min-max{N|Nus|N%%} Comma separated list of min/max pulse\n"
-				"                      width range for servos. Range must be within the limit\n"
-				"                      specified by --min and --max values\n"
-				"  --init=servo:{N|Nus|N%%} Comma separated list of initial pulse width for servos\n"
-				"  --invert            Inverts outputs\n"
-				"  --port=N            TCP port number to listen for set/get commands\n"
-				"  --dma-chan=N        tells servod which dma channel to use, default %d\n"
-				"  --gpio=<list>       tells servod which GPIO pins to use\n"
-				"  --p1pins=<list>     tells servod which pins on the P1 header to use\n"
-				"  --p5pins=<list>     tells servod which pins on the P5 header to use\n"
-				"\nwhere <list> defaults to \"%s\" for p1pins and\n"
-				"\"%s\" for p5pins and gpio.  p5pins is only valid on rev 2 boards.\n\n"
-				"min and max values can be specified in units of steps, in microseconds,\n"
-				"or as a percentage of the cycle time.  So, for example, if cycle time is\n"
-				"20000us and step size is 10us then the following are equivalent:\n\n"
-				"          --min=50   --min=500us    --min=2.5%%\n\n"
-				"For the default configuration, example commands to set the first servo\n"
-				"to the mid position would be any of:\n\n"
-				"  echo 0=150 > /dev/servoblaster        # Specify as a number of steps\n"
-				"  echo 0=50%% > /dev/servoblaster        # Specify as a percentage\n"
-				"  echo 0=1500us > /dev/servoblaster     # Specify as microseconds\n"
-				"  echo P1-7=150 > /dev/servoblaster     # Using P1 pin number rather\n"
-				"  echo P1-7=50%% > /dev/servoblaster     # ... than servo number\n"
-				"  echo G4=1500us > /dev/servoblaster    # Using GPIO number\n\n"
-				"Servo adjustments may also be specified relative to the current\n"
-				"position by adding a '+' or '-' prefix to the width as follows:\n\n"
-				"  echo 0=+10 > /dev/servoblaster\n"
-				"  echo 0=-20 > /dev/servoblaster\n"
-				"If --init was used to specify initial position then servo can be reset\n"
-				"using following command:\n"
-				"  echo 0=reset > /dev/servoblaster\n\n",
-				argv[0],
-				DEFAULT_CYCLE_TIME_US,
-				DEFAULT_STEP_TIME_US,
-				DEFAULT_SERVO_MIN_US/DEFAULT_STEP_TIME_US, DEFAULT_SERVO_MIN_US,
-				DEFAULT_SERVO_MAX_US/DEFAULT_STEP_TIME_US, DEFAULT_SERVO_MAX_US,
-				DMA_CHAN_DEFAULT, default_p1_pins, default_p5_pins);
-			exit(0);
-		} else if (c == '1') {
-			if (hadgpio)
-				fatal("--p1pins cannot be used with --gpio\n");
-			p1pins = optarg;
-			hadp1 = 1;
-			if (!hadp5)
-				p1first = 1;
-		} else if (c == '5') {
-			if (hadgpio)
-				fatal("--p5pins cannot be used with --gpio\n");
-			p5pins = optarg;
-			hadp5 = 1;
-			if (!hadp1)
-				p1first = 0;
-		} else if (c == 'g') {
-			if (hadp1 || hadp5)
-				fatal("--gpio cannot be used with --p1pins or --p5pins\n");
-			hadgpio = 1;
-			gpio_pins = optarg;
-		} else if (c == 'r') {
-			servo_min_max = optarg;
-		} else if (c == 'I') {
-			servo_init_arg = optarg;
-		} else if (c == 'P') {
-			uint32_t port = atoi(optarg);
-			if (port > 0xFFFF)
-				fatal("Invalid port number\n");
-			cmd_port = (uint16_t)port;
-		} else {
-			fatal("Invalid parameter\n");
-		}
-	}
-	if (board_rev() == 1 && p5pins[0])
-		fatal("Board rev 1 does not have a P5 header\n");
-
-	if (hadgpio)
-		parse_gpio_list(gpio_pins, &p1pins, &p5pins);
-	else
-		parse_pin_lists(p1first, p1pins, p5pins);
-
-	if (dma_chan_arg) {
-		dma_chan = strtol(dma_chan_arg, &p, 10);
-		if (*dma_chan_arg < '0' || *dma_chan_arg > '9' ||
-				*p || dma_chan < DMA_CHAN_MIN || dma_chan > DMA_CHAN_MAX)
-			fatal("Invalid dma-chan specified\n");
-	} else {
-		dma_chan = DMA_CHAN_DEFAULT;
-	}
-
-	if (idle_timeout_arg) {
-		idle_timeout = strtol(idle_timeout_arg, &p, 10);
-		if (*idle_timeout_arg < '0' || *idle_timeout_arg > '9' ||
-				(*p && strcmp(p, "ms")) ||
-				idle_timeout < 10 || idle_timeout > 3600000)
-			fatal("Invalid idle-timeout specified\n");
-	} else {
-		idle_timeout = 0;
-	}
-
-	if (cycle_time_arg) {
-		cycle_time_us = strtol(cycle_time_arg, &p, 10);
-		if (*cycle_time_arg < '0' || *cycle_time_arg > '9' ||
-				(*p && strcmp(p, "us")) ||
-				cycle_time_us < 1000 || cycle_time_us > 1000000)
-			fatal("Invalid cycle-time specified\n");
-	} else {
-		cycle_time_us = DEFAULT_CYCLE_TIME_US;
-	}
-
-	if (step_time_arg) {
-		servo_step_time_us = strtol(step_time_arg, &p, 10);
-		if (*step_time_arg < '0' || *step_time_arg > '9' ||
-				(*p && strcmp(p, "us")) ||
-				servo_step_time_us < 2 || servo_step_time_us > 1000) {
-			fatal("Invalid step-size specified\n");
-		}
-	} else {
-		servo_step_time_us = DEFAULT_STEP_TIME_US;
-	}
-
-	if (cycle_time_us % servo_step_time_us) {
-		fatal("cycle-time is not a multiple of step-size\n");
-	}
-
-	if (cycle_time_us / servo_step_time_us < 100) {
-		fatal("cycle-time must be at least 100 * step-size\n");
-	}
-
-	if (servo_min_arg) {
-		servo_min_ticks = parse_min_max_arg(servo_min_arg, "min");
-	} else {
-		servo_min_ticks = DEFAULT_SERVO_MIN_US / servo_step_time_us;
-	}
-
-	if (servo_max_arg) {
-		servo_max_ticks = parse_min_max_arg(servo_max_arg, "max");
-	} else {
-		servo_max_ticks = DEFAULT_SERVO_MAX_US / servo_step_time_us;
-	}
-
-	num_samples = cycle_time_us / servo_step_time_us;
-	num_cbs     = num_samples * 2 + MAX_SERVOS;
-	num_pages   = (num_cbs * sizeof(dma_cb_t) + num_samples * 4 +
-				MAX_SERVOS * 4 + PAGE_SIZE - 1) >> PAGE_SHIFT;
-
-	if (num_pages > MAX_MEMORY_USAGE / PAGE_SIZE) {
-		fatal("Using too much memory; reduce cycle-time or increase step-size\n");
-	}
-
-	if (servo_max_ticks > num_samples) {
-		fatal("max value is larger than cycle time\n");
-	}
-	if (servo_min_ticks >= servo_max_ticks) {
-		fatal("min value is >= max value\n");
-	}
-
-	if (servo_min_max)
-		parse_servo_min_max(servo_min_max, "min-max");
-
-	for(i = 0; i < MAX_SERVOS; i++) {
-		/* sanity check for min width */
-		if (servos[i].min_width == 0)
-			servos[i].min_width = servo_min_ticks;
-		else if (servos[i].min_width < servo_min_ticks)
-			fatal("servo %d min value is less than minimum width\n", i);
-		/* sanity check for max width */
-		if (servos[i].max_width == 0)
-			servos[i].max_width = servo_max_ticks;
-		else if (servos[i].max_width > servo_max_ticks)
-			fatal("servo %d max value is greater than maximum width\n", i);
-	}
-
-	if (servo_init_arg)
-		parse_servo_init(servo_init_arg, "init");
-
-	for(i = 0; i < MAX_SERVOS; i++) {
-		/* sanity check for initial width */
-		if (servos[i].init != 0) {
-			if ((servos[i].init < servos[i].min_width) || (servos[i].init > servos[i].max_width))
-				fatal("servo %d init value %d is outside of min/max limits %d/%d\n", 
-					i, servos[i].init, servos[i].min_width, servos[i].max_width);
-		}
-	}
-
-	printf("\nBoard revision:            %7d\n", board_rev());
-	printf("Using hardware:                %s\n", delay_hw == DELAY_VIA_PWM ? "PWM" : "PCM");
-	printf("Using DMA channel:         %7d\n", dma_chan);
-	if (idle_timeout)
-		printf("Idle timeout:              %7dms\n", idle_timeout);
-	else
-		printf("Idle timeout:             Disabled\n");
-	printf("Number of servos:          %7d\n", num_servos);
-	printf("Servo cycle time:          %7dus\n", cycle_time_us);
-	printf("Pulse increment step size: %7dus\n", servo_step_time_us);
-	printf("Minimum width value:       %7d (%dus)\n", servo_min_ticks,
-						servo_min_ticks * servo_step_time_us);
-	printf("Maximum width value:       %7d (%dus)\n", servo_max_ticks,
-						servo_max_ticks * servo_step_time_us);
-	printf("Output levels:            %s\n", invert ? "Inverted" : "  Normal");
-	printf("\nUsing GPIO pins:             %s\n", gpio_pins);
-	printf("Using P1 pins:               %s\n", p1pins);
-	if (board_rev() > 1)
-		printf("Using P5 pins:               %s\n", p5pins);
-	printf("\nServo mapping:\n");
-	printf("     #    Header-pin     GPIO      Range, us     Init, us\n");
 	for (i = 0; i < MAX_SERVOS; i++) {
 		if (servos[i].gpio == DMY)
 			continue;
-		printf("    %2d on %-5s          GPIO-%d %7d-%-7d",
-			i, gpio2pinname(servos[i].gpio), servos[i].gpio,
-			servos[i].min_width * servo_step_time_us, servos[i].max_width * servo_step_time_us);
-		if (servos[i].init)
-			printf(" %d", servos[i].init * servo_step_time_us);
-		printf("\n");
+		numservos++;
 	}
-	printf("\n");
+	if (numservos == 0)
+		fatal("servod: At least one servo must be configured\n");
+
+	num_samples = servod_cfg.cycle_time_us / servod_cfg.servo_step_time_us;
+	num_cbs     = num_samples * 2 + MAX_SERVOS;
+	num_pages   = (num_cbs * sizeof(dma_cb_t) + num_samples * 4 +
+		MAX_SERVOS * 4 + PAGE_SIZE - 1) >> PAGE_SHIFT;
+
+	if (num_pages > MAX_MEMORY_USAGE / PAGE_SIZE)
+		fatal("Using too much memory; reduce cycle-time or increase step-size\n");
+
+	if (servod_cfg.servo_max_ticks > num_samples)
+		fatal("max value is larger than cycle time\n");
 
 	init_idle_timers();
 	setup_sighandlers();
 
 	dma_reg = map_peripheral(DMA_BASE, DMA_LEN);
-	dma_reg += dma_chan * DMA_CHAN_SIZE / sizeof(uint32_t);
+	dma_reg += servod_cfg.dma_chan * DMA_CHAN_SIZE / sizeof(uint32_t);
 	pwm_reg = map_peripheral(PWM_BASE, PWM_LEN);
 	pcm_reg = map_peripheral(PCM_BASE, PCM_LEN);
 	clk_reg = map_peripheral(CLK_BASE, CLK_LEN);
@@ -1478,10 +1098,9 @@ servod_init(int argc, char **argv)
 		if (servos[i].gpio == DMY)
 			continue;
 		servos[i].gpiomode = gpio_get_mode(servos[i].gpio);
-		gpio_set(servos[i].gpio, invert ? 1 : 0);
+		gpio_set(servos[i].gpio, servod_cfg.invert ? 1 : 0);
 		gpio_set_mode(servos[i].gpio, GPIO_MODE_OUT);
 	}
-	restore_gpio_modes = 1;
 
 	init_ctrl_data();
 	init_hardware();
@@ -1492,9 +1111,6 @@ servod_init(int argc, char **argv)
 	if (chmod(DEVFILE, 0666) < 0)
 		fatal("servod: Failed to set permissions on %s: %m\n", DEVFILE);
 
-	for(i = 0; i < MAX_SERVOS; i++) {
-		reset_servo(i);
-	}
-
 	return 0;
 }
+

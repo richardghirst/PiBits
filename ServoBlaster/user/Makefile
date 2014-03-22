@@ -6,7 +6,7 @@ CFLAGS += -Wall -std=gnu99
 LIBS = -lm
 
 APP  = servod
-OBJS = main.o servod.o
+OBJS = main.o args.o servod.o
 
 .PHONY: all install uninstall
 
@@ -33,5 +33,5 @@ uninstall:
 clean:
 	$(RM) -f *.o $(APP)
 
-%.o: %.c %.h Makefile
+%.o: %.c %.h Makefile servod.h args.h
 	$(CC) -c $(CFLAGS) $< -o $@
