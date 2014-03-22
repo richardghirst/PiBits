@@ -133,7 +133,6 @@ anything non-trivial with four servos connected pulls the 5 volts down far
 enough to crash the Pi.
 
 
-
 There are two implementations of ServoBlaster; a kernel module based one, and a
 user space daemon.  The kernel module based one is the original, but is more of
 a pain to build because you need a matching kernel build.  The user space
@@ -173,11 +172,12 @@ Options:
                       250 steps or 2500us
   --invert            Inverts outputs
   --dma-chan=N        tells servod which dma channel to use, default 14
+  --gpio=<list>       tells servod which GPIO pins to use
   --p1pins=<list>     tells servod which pins on the P1 header to use
   --p5pins=<list>     tells servod which pins on the P5 header to use
 
 where <list> defaults to "7,11,12,13,15,16,18,22" for p1pins and
-"" for p5pins.  p5pins is only valid on rev 2 boards.
+"" for p5pins and gpio.  p5pins is only valid on rev 2 boards.
 
 min and max values can be specified in units of steps, in microseconds,
 or as a percentage of the cycle time.  So, for example, if cycle time is
@@ -200,6 +200,14 @@ position by adding a '+' or '-' prefix to the width as follows:
 
   echo 0=+10 > /dev/servoblaster
   echo 0=-20 > /dev/servoblaster
+
+To read servo current position example command would be any of:
+  
+  echo 0=? > /dev/servoblaster       # Get current position as a number of steps
+  echo 0=?% > /dev/servoblaster      # Get current position as a percentage
+  echo 0=?us > /dev/servoblaster     # Get current position as microseconds
+
+Pin numbers cannot be used to read servo position, only servo numbers.
 
 $ sudo ./servod
 

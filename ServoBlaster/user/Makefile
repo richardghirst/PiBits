@@ -1,13 +1,23 @@
+CFLAGS = -g
+# uncomment to change optimization level
+# CFLAGS += -O2
+CFLAGS += -Wall -std=gnu99
+
+LIBS = -lm
+
+APP  = servod
+OBJS = servod.o
 
 .PHONY: all install uninstall
-all:	servod
 
-servod:	servod.c
-	gcc -Wall -g -O2 -o servod servod.c -lm
+all: $(APP)
 
-install: servod
+$(APP):	$(OBJS)
+	$(CC) $(CFLAGS) -o $(APP) $(OBJS) $(LIBS)
+
+install: $(APP)
 	[ "`id -u`" = "0" ] || { echo "Must be run as root"; exit 1; }
-	cp -f servod /usr/local/sbin
+	cp -f $(APP) /usr/local/sbin
 	cp -f init-script /etc/init.d/servoblaster
 	chmod 755 /etc/init.d/servoblaster
 	update-rc.d servoblaster defaults 92 08
@@ -21,5 +31,7 @@ uninstall:
 	rm -f /etc/init.d/servoblaster
 
 clean:
-	rm -f servod
+	$(RM) -f *.o $(APP)
 
+%.o: %.c %.h Makefile
+	$(CC) -c $(CFLAGS) $< -o $@
