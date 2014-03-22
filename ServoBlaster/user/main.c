@@ -318,6 +318,8 @@ parse_servo_range(servod_cfg_t *cfg, int fderr, const char *arg, int *min_width,
 	}
 
 	int numticks = cfg->cycle_time_us / cfg->servo_step_time_us;
+	while(*p && *p <= ' ') p++;
+
 	if (*p == '%') {
 		if (min_ticks < 0 || min_ticks > 100.0 || max_ticks < 0 || max_ticks > 100.0) {
 			printfd(fderr, "Value must be between 0% and 100% inclusive\n");
@@ -482,14 +484,14 @@ process_socket_cmd(servod_cfg_t *cfg, int fd)
 			}
 			int width = servos[servo].width;
 			if (buffer_is(arg, "%")) {
-				printfd(sock, "%d", (int)(0.5 + 100.0*(width - servos[servo].min_width)/(double)(servos[servo].max_width - servos[servo].min_width)));
+				printfd(sock, "%d\n", (int)(0.5 + 100.0*(width - servos[servo].min_width)/(double)(servos[servo].max_width - servos[servo].min_width)));
 				continue;
 			}
 			if (buffer_is(arg, "us")) {
-				printfd(sock, "%d", width * cfg->servo_step_time_us);
+				printfd(sock, "%d\n", width * cfg->servo_step_time_us);
 				continue;
 			}
-			printfd(sock, "%d", width);
+			printfd(sock, "%d\n", width);
 			continue;
 		}
 

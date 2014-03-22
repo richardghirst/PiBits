@@ -132,7 +132,6 @@ take the 5 volts for it from the header pins on the Pi, but I find that doing
 anything non-trivial with four servos connected pulls the 5 volts down far
 enough to crash the Pi.
 
-
 There are two implementations of ServoBlaster; a kernel module based one, and a
 user space daemon.  The kernel module based one is the original, but is more of
 a pain to build because you need a matching kernel build.  The user space
@@ -170,7 +169,12 @@ Options:
                       50 steps or 500us
   --max={N|Nus|N%}    specifies the maximum allowed pulse width, default
                       250 steps or 2500us
+  --min-max=servo:min-max{N|Nus|N%%} Comma separated list of min/max pulse
+                      width range for servos. Range must be within the limit
+                      specified by --min and --max values
+  --init=servo:{N|Nus|N%%} Comma separated list of initial pulse width for servos
   --invert            Inverts outputs
+  --port=N            TCP port number to listen for set/get commands
   --dma-chan=N        tells servod which dma channel to use, default 14
   --gpio=<list>       tells servod which GPIO pins to use
   --p1pins=<list>     tells servod which pins on the P1 header to use
@@ -193,7 +197,7 @@ to the mid position would be any of:
   echo 0=1500us > /dev/servoblaster     # Specify as microseconds
   echo P1-7=150 > /dev/servoblaster     # Using P1 pin number rather
   echo P1-7=50% > /dev/servoblaster     # ... than servo number
-  echo P1-7=1500us > /dev/servoblaster
+  echo G4=1500us > /dev/servoblaster    # Using GPIO number
 
 Servo adjustments may also be specified relative to the current
 position by adding a '+' or '-' prefix to the width as follows:
@@ -237,8 +241,13 @@ Servo mapping:
 $ 
 
 The prompt will return immediately, and servod is left running in the
-background.  You can check it is running via the "ps ax" command.  If you want
-to stop servod, the easiest way is to run:
+background.  You can check it is running via the "ps ax" command. If you want
+to stop servod and it was started with TCP command mode enabled, the easiest
+way is to run:
+
+$ servoctl stop
+
+Or you can kill it using:
 
 $ sudo killall servod
 
@@ -328,7 +337,18 @@ You may wish to edit /etc/init.d/servoblaster to change the parameters that are
 specified in that script (e.g.  the idle-timeout, which is set to 2 seconds in
 the shipped version of that script).
 
+Using TCP command mode (--port command line parameter) following commands
+are supported:
 
+servoctl debug
+servoctl config
+servoctl get {servo} {|us|%} - get current width in ticks, us or % of range
+servoctl get {servo} info - get servo info
+servoctl set {servo} width{N|Nus|N%} - set width in ticks, us or % of range
+servoctl set {servo} range min-max{N|Nus|N%} - set range in ticks, us or % of cycle time
+servoctl stop - terminate servod
+
+Commands can be comma separated.
 
 The kernel space implementation
 -------------------------------
