@@ -2,6 +2,7 @@
 ###
 # Simple servod control script
 # Make sure that you pass --port=$PORT to servod at start
+# To get latest set of supported commands use 'servoctl help'
 
 ADDR="127.0.0.1"
 PORT="50000"

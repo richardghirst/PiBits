@@ -1,18 +1,25 @@
-CFLAGS = -g
+#CC = g++
+
+CFLAGS += -std=gnu99
+CFLAGS += -g
+CFLAGS += -Wall
 # uncomment to change optimization level
 # CFLAGS += -O2
-CFLAGS += -Wall -std=gnu99
 
-LIBS = -lm
+LIBS = -lm -L. -lservod
 
 APP  = servod
-OBJS = main.o args.o servod.o
+LIB  = libservod.a
+OBJS = main.o args.o
 
-.PHONY: all install uninstall
+.PHONY: all install uninstall libinstall
 
 all: $(APP)
 
-$(APP):	$(OBJS)
+$(LIB):	servod.o
+	ar rcs $(LIB) servod.o
+
+$(APP):	$(OBJS) $(LIB)
 	$(CC) $(CFLAGS) -o $(APP) $(OBJS) $(LIBS)
 
 install: $(APP)
@@ -29,9 +36,18 @@ uninstall:
 	update-rc.d servoblaster remove
 	rm -f /usr/local/sbin/servod
 	rm -f /etc/init.d/servoblaster
+	rm -f /usr/local/lib/lib$(LIB)
+	rm -f /usr/local/include/servod.h
+
+libinstall: $(LIB)
+	[ `id -u` = "0" ] || { echo "Must be run as root"; exit 1; }
+	cp -f $(LIB) /usr/local/lib
+	cp -f servod.h /usr/local/include
+	chmod 644 /usr/local/lib/$(LIB)
+	chmod 644 /usr/local/include/servod.h
 
 clean:
-	$(RM) -f *.o $(APP)
+	$(RM) -f *.o $(APP) $(LIB)
 
 %.o: %.c %.h Makefile servod.h args.h
 	$(CC) -c $(CFLAGS) $< -o $@

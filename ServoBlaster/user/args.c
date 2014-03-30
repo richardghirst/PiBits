@@ -22,14 +22,28 @@
 
 #include <math.h>
 #include <stdio.h>
+#include <stdarg.h>
 #include <getopt.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <memory.h>
-#include <sys/time.h>
 
 #include "servod.h"
 #include "args.h"
+
+void
+fatal(const char *fmt, ...)
+{
+	va_list ap;
+
+	va_start(ap, fmt);
+	vfprintf(stderr, fmt, ap);
+	va_end(ap);
+
+	servod_close();
+	exit(-1);
+}
+
 
 /* Define which P1 header pins to use by default.  These are the eight standard
  * GPIO pins (those coloured green in the diagram on this page:
@@ -38,14 +52,14 @@
  * Which P1 header pins are actually used can be overridden via command line
  * parameter '--p1pins=...'.
  */
-static char *default_p1_pins = "7,11,12,13,15,16,18,22";
-static char *default_p5_pins = "";
-static char *gpio_pins = "";
+static const char *default_p1_pins = "7,11,12,13,15,16,18,22";
+static const char *default_p5_pins = "";
+static const char *gpio_pins = "";
 
 static int
-parse_pin_lists(int p1first, char *p1pins, char*p5pins)
+parse_pin_lists(int p1first, const char *p1pins, const char*p5pins)
 {
-	char *name, *pins;
+	const char *name, *pins;
 	int i, gpio, num_servos = 0;
 	uint8_t head, *pNpin2servo;
 	int lst, servo = 0;
@@ -109,9 +123,9 @@ parse_pin_lists(int p1first, char *p1pins, char*p5pins)
 }
 
 static int
-parse_gpio_list(char *gpio, char **p1pins, char **p5pins)
+parse_gpio_list(const char *gpio, const char **p1pins, const char **p5pins)
 {
-	char *pins;
+	const char *pins;
 	FILE *fp;
 	int servo = 0;
 	int num_servos = 0;
@@ -123,7 +137,7 @@ parse_gpio_list(char *gpio, char **p1pins, char **p5pins)
 	memset(p5list, 0, sizeof(p5list));
 
 	pins = gpio;
-	while (*pins) {
+	while(*pins) {
 		char *end;
 		uint8_t pin;
 		int gpio = (int)strtol(pins, &end, 0);
@@ -149,8 +163,8 @@ parse_gpio_list(char *gpio, char **p1pins, char **p5pins)
 		char *plist = (head) == 1 ? p1list : p5list;
 		char *pos = strchr(plist, 0);
 		if (pos != plist) {
-				*pos = ',';
-				pos++;
+			*pos = ',';
+			pos++;
 		}
 		sprintf(pos, "%d", pin);
 		uint8_t *pin2servo = (head) == 1 ? p1pin2servo : p5pin2servo;
@@ -185,7 +199,7 @@ parse_gpio_list(char *gpio, char **p1pins, char **p5pins)
 }
 
 static int
-parse_min_max_arg(servod_cfg_t *cfg, char *arg, char *name)
+parse_min_max_arg(servod_cfg_t *cfg, char *arg, const char *name)
 {
 	char *p;
 	double val = strtod(arg, &p);
@@ -329,8 +343,8 @@ servod_args(servod_cfg_t *cfg, int argc, char **argv)
 {
 	int i;
 	user_args_t *udata;
-	char *p1pins = default_p1_pins;
-	char *p5pins = default_p5_pins;
+	const char *p1pins = default_p1_pins;
+	const char *p5pins = default_p5_pins;
 	int p1first = 1, hadp1 = 0, hadp5 = 0, hadgpio = 0;
 	char *servo_min_arg = NULL;
 	char *servo_max_arg = NULL;
@@ -364,7 +378,7 @@ servod_args(servod_cfg_t *cfg, int argc, char **argv)
 	
 	setvbuf(stdout, NULL, _IOLBF, 0);
 
-	udata = cfg->data;
+	udata = (user_args_t*)cfg->udata;
 	udata->daemonize = 1;
 	udata->cmd_port = SERVOD_CMD_PORT;
 

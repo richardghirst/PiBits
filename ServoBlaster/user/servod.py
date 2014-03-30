@@ -2,6 +2,8 @@
 
 ##
 # Simple script to drive first two servos in opposite directions
+# using /def/servoblaser file or TCP socket connection
+# Copyright (c) 2014 Andrey Chilikin https://github.com/achilikin
 
 import os
 import sys
@@ -14,7 +16,7 @@ BUFFER_SIZE = 2048
 DEVFILE	= "/dev/servoblaster"
 
 servod_ip = '127.0.0.1'
-servod_port = 50000
+servod_port = 50000 # make sure that you use the same port for servod
 
 # use file to set a servo position in % of servo range
 def servo_set(servo, pos):
@@ -51,6 +53,7 @@ if (os.path.exists(DEVFILE) == False):
 
 servo_cmd("config")
 servo_cmd("debug")
+#servo_cmd("set " + str(servo[1]) + " range 800-2200us")
 servo_cmd("set " + str(servo[0]) + " 50%")
 servo_cmd("set " + str(servo[1]) + " 50%")
 servo_cmd("get " + str(servo[0]) + " info")
@@ -62,14 +65,18 @@ try:
 	while(True):    
 		for pos in range(0,101):
 			servo_set(servo[0], pos)
-			servo_set(servo[1], 100 - pos)
+			servo_set(servo[1], pos)
+			#servo_set(servo[1], 100 - pos)
 		time.sleep(1)
 		for pos in range(0,101):
 			servo_set(servo[0], 100 - pos)
-			servo_set(servo[1], pos)
+			servo_set(servo[1], 100 - pos)
+			#servo_set(servo[1], pos)
 		time.sleep(1)
 except:
 	pass
 
 servo_cmd("reset " + str(servo[0]))
 servo_cmd("reset " + str(servo[1]))
+servo_cmd("set " + str(servo[0]) + " 0")
+servo_cmd("set " + str(servo[1]) + " 0")

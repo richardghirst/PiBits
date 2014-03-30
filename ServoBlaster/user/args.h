@@ -36,6 +36,9 @@ typedef struct user_args_s
 	int cmd_port;
 }user_args_t;
 
+/* print error and terminate */
+void fatal(const char *fmt, ...);
+
 /* parse command line parameters and update servod_cfg */
 int  servod_args(servod_cfg_t *cfg, int argc, char **argv);
 

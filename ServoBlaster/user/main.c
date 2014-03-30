@@ -28,11 +28,14 @@
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <sys/stat.h>
 #include <sys/select.h>
 #include <netinet/in.h>
 
 #include "servod.h"
 #include "args.h"
+
+#define DEVFILE	"/dev/servoblaster"
 
 #define FD_FILE   0
 #define FD_SOCKET 1
@@ -358,8 +361,8 @@ parse_servo_range(servod_cfg_t *cfg, int fderr, const char *arg, int *min_width,
 
 		*min_width = (int)min_ticks / cfg->servo_step_time_us;
 		*max_width = (int)max_ticks / cfg->servo_step_time_us;
-		if (min_ticks > numticks || max_ticks > numticks) {
-			printfd(fderr, "Value is too big, must be less than %d\n", numticks + 1);
+		if (*min_width > numticks || *max_width > numticks) {
+			printfd(fderr, "Value is too big, must be less than %d\n", numticks);
 			return -1;
 		}
 		p += 2;
@@ -369,6 +372,21 @@ parse_servo_range(servod_cfg_t *cfg, int fderr, const char *arg, int *min_width,
 
 	printfd(fderr, "Invalid format specified\n");
 	return -1;
+}
+
+void print_help(int fdout)
+{
+	printfd(fdout, "Following commands are supported (can be comma separated)\n");
+	printfd(fdout, "\t'debug' - print debug information\n");
+	printfd(fdout, "\t'config' - print servod configuration\n");
+	printfd(fdout, "\t'stop' - terminate servod daemon\n");
+	printfd(fdout, "\t'set N Width' - Width in ticks, us, %% of range\n");
+	printfd(fdout, "\t'set N speed Speed' - Speed in ms\n");
+	printfd(fdout, "\t'set N to Width' - move to Width with Speed\n");
+	printfd(fdout, "\t'set N range Min-Max' - Width in steps, us or %% of full scale\n");
+	printfd(fdout, "\t'reset N' - set initial width, if configured\n");
+	printfd(fdout, "\t'get N' - get current width in ticks\n");
+	printfd(fdout, "\t'get N info' - get servo configuration info\n");
 }
 
 static int
@@ -415,18 +433,68 @@ process_socket_cmd(servod_cfg_t *cfg, int fd)
 			while(*next && *next <= ' ') next++;
 		}
 
+		if (buffer_is(cmd, "help")) {
+			print_help(sock);
+			continue;
+		}
+
 		if (buffer_is(cmd, "debug")) {
 			do_debug(sock);
 			continue;
 		}
+
 		if (buffer_is(cmd, "stop")) {
 			do_stop = 1;
 			break;
 		}
+
 		if (buffer_is(cmd, "config")) {
 			servod_dump(sock);
 			continue;
 		}
+
+		if (buffer_arg(cmd, "set", &arg)) {
+			int servo = parse_servo(arg, sock, &arg);
+			if (servo == -1)
+				break;
+			servo_t *s = &servos[servo];
+			if (buffer_arg(arg, "range", &arg)) {
+				int minw, maxw;
+				if (parse_servo_range(cfg, sock, arg, &minw, &maxw) == 0) {
+					s->min_width = minw;
+					s->max_width = maxw;
+					if (s->init < minw) s->init = minw;
+					if (s->init > maxw) s->init = maxw;
+					if (s->width < minw) set_servo(servo, minw);
+					if (s->width > maxw) set_servo(servo, maxw);
+				}
+				continue;
+			}
+			if (buffer_arg(arg, "speed", &arg)) {
+				uint32_t millis = (uint32_t)atoi(arg);
+				if (set_servo_speed(servo, millis) != 0)
+					printfd(sock, "Unable to set servo %d speed to %dms\n", servo, millis);
+				else
+					printfd(sock, "servo %d speed set to %dms\n", servo, s->rim);
+				continue;
+			}
+			int delayed = 0;
+			if (buffer_arg(arg, "to", &arg))
+				delayed = 1;
+
+			int width = parse_width(cfg, servo, arg);
+			if (width == -1) {
+				strcat(cmd, ": invalid width value!\n");
+				write(sock, cmd, strlen(cmd));
+				break;
+			}
+			if (!delayed)
+				set_servo(servo, width);
+			else
+				set_servo_ex(servo,  WIDTH_DELAY | WIDTH_TICKS, width);
+			continue;
+		}
+
 		if (buffer_arg(cmd, "reset", &arg)) {
 			int servo = parse_servo(arg, sock, &arg);
 			if (servo != -1 && servos[servo].init != -1) {
@@ -437,42 +505,19 @@ process_socket_cmd(servod_cfg_t *cfg, int fd)
 			write(sock, cmd, strlen(cmd));
 			break;
 		}
-		if (buffer_arg(cmd, "set", &arg)) {
-			int servo = parse_servo(arg, sock, &arg);
-			if (servo == -1)
-				break;
-			if (buffer_arg(arg, "range", &arg)) {
-				int minw, maxw;
-				if (parse_servo_range(cfg, sock, arg, &minw, &maxw) == 0) {
-					servos[servo].min_width = minw;
-					servos[servo].max_width = maxw;
-					if (servos[servo].init < minw) servos[servo].init = minw;
-					if (servos[servo].init > maxw) servos[servo].init = maxw;
-					if (servos[servo].width < minw) set_servo(servo, minw);
-					if (servos[servo].width > maxw) set_servo(servo, maxw);
-				}
-				continue;
-			}
 
-			int width = parse_width(cfg, servo, arg);
-			if (width == -1) {
-				strcat(cmd, ": invalid width value!\n");
-				write(sock, cmd, strlen(cmd));
-				break;
-			}
-			set_servo(servo, width);
-			continue;
-		}
 		if (buffer_arg(cmd, "get", &arg)) {
 			int servo = parse_servo(arg, sock, &arg);
 			if (servo == -1)
 				break;
+			servo_t *s = &servos[servo];
 			if (buffer_is(arg, "info")) {
-				servo_t *s = &servos[servo];
 				printfd(sock, "servo:  %d\n", servo);
 				printfd(sock, "    gpio:   %d\n", s->gpio);
 				printfd(sock, "    range:  %d-%d us\n", s->min_width * cfg->servo_step_time_us,
 					s->max_width * cfg->servo_step_time_us);
+				if (s->rim)
+					printfd(sock, "    speed:  %dms\n", s->rim);
 				if (s->width >= s->min_width)
 					printfd(sock, "    width:  %d us\n", s->width * cfg->servo_step_time_us);
 				else
@@ -482,9 +527,9 @@ process_socket_cmd(servod_cfg_t *cfg, int fd)
 				printfd(sock, "    active: %s\n", get_servo_state(servo) ? "true" : "false");
 				continue;
 			}
-			int width = servos[servo].width;
+			int width = s->width;
 			if (buffer_is(arg, "%")) {
-				printfd(sock, "%d\n", (int)(0.5 + 100.0*(width - servos[servo].min_width)/(double)(servos[servo].max_width - servos[servo].min_width)));
+				printfd(sock, "%d\n", (int)(0.5 + 100.0*(width - s->min_width)/(double)(s->max_width - s->min_width)));
 				continue;
 			}
 			if (buffer_is(arg, "us")) {
@@ -506,11 +551,24 @@ leave:
 }
 
 static void
+terminate(void *dummy)
+{
+	unlink(DEVFILE);
+}
+
+static void
 go_go_go(servod_cfg_t *cfg)
 {
 	int nfd = 1;
-	user_args_t *udata = cfg->data;
+	user_args_t *udata = (user_args_t *)cfg->udata;
 	struct pollfd polls[FD_NUM];
+
+	/* create file for command processing */
+	unlink(DEVFILE);
+	if (mkfifo(DEVFILE, 0666) < 0)
+		fatal("Failed to create %s: %m", DEVFILE);
+	if (chmod(DEVFILE, 0666) < 0)
+		fatal("Failed to set permissions on %s: %m", DEVFILE);
 
 	polls[FD_FILE].fd = open(DEVFILE, O_RDWR | O_NONBLOCK);
 	polls[FD_FILE].events = POLLIN;
@@ -530,14 +588,19 @@ go_go_go(servod_cfg_t *cfg)
 		fatal("servod: Failed to create command handler\n");
 
 	while(!do_stop) {
-		/* check for servo idle timeout */
-		struct timeval tv;
-		get_next_idle_timeout(&tv);
-		int ret = poll(polls, nfd, tv.tv_sec * 1000 + tv.tv_usec / 1000);
+		int ret = poll(polls, nfd, 20);
 		if (ret < 0) /* interrupted by a signal */
 			break;
-		if (ret == 0) /* timeout */
+
+		if (ret == 0) { /* timeout */
+			/* check for servo idle timeout */
+			struct timeval tv;
+			get_next_idle_timeout(&tv);
+			/* update any servos on the move */
+			servo_speed_handler();
 			continue;
+		}
+
 		if (polls[FD_FILE].revents)
 			process_file_cmd(cfg, polls[FD_FILE].fd, STDOUT_FILENO, STDERR_FILENO);
 		if (polls[FD_SOCKET].revents)
@@ -555,28 +618,48 @@ main(int argc, char **argv)
 	user_args_t udata;
 	servod_cfg_t *cfg;
 
-	/* Create servod instance with default parameters  */
-	cfg = servod_create(&udata);
+	/* Initialise user data */
+	udata.daemonize = 1;
+	udata.cmd_port  = SERVOD_CMD_PORT;
 
-#if 0
+	/* Create servod instance with default parameters  */
+	cfg = servod_create(&udata, terminate);
+	if (cfg == NULL) {
+		fprintf(stderr, "Unable to create servod instance: %s\n", servod_error());
+		return -1;
+	}
+
+#if 1
 	/* Parse command line arguments and build list of servos */
 	servod_args(cfg, argc, argv); /* exits on error */
 #else
 	/* Or change default configuration if needed */
-	cfg->servo_min_ticks = 50;
-	cfg->servo_max_ticks = 280;
-	udata.daemonize = 1;
-	udata.cmd_port  = SERVOD_CMD_PORT;
+	if (argc == 2 && strcmp(argv[1], "--debug") == 0)
+		udata.daemonize = 0;
+	cfg->servo_min_ticks = 0;
+	cfg->servo_max_ticks = cfg->cycle_time_us/ cfg->servo_step_time_us;
 
 	/* add servos manually */
-	if (add_servo(0, PIN_GPIO, 23, WIDTH_MICROSEC, 580, 2620, INIT_PERCENT, 50) == -1)
+	/* add servo 0 with range 620 to 2780 us, initial position 50% of range */
+	if (add_servo(0, PIN_GPIO, 23, WIDTH_MICROSEC, 620, 2780, INIT_PERCENT, 50) == -1)
 		fatal("Unable to add servo 0\n");
-	if (add_servo(1, PIN_GPIO, 24, WIDTH_TICKS, 58, 278, INIT_PERMILLE, 500) == -1)
+	/* add servo 1 with range 58 to 274 ticks, initial position 50.0% of range */
+	if (add_servo(1, PIN_GPIO, 24, WIDTH_TICKS, 58, 274, INIT_PERMILLE, 500) == -1)
 		fatal("Unable to add servo 1\n");
+	/* set servo 1 clockwise rotation */
+	set_servo_dir(1, DIR_CW);
+	/* set servo 0 speed to 5 sec from min to max */
+	set_servo_speed(0, 5000);
+	/* set servo 1 speed to 2.5 sec from min to max */
+	set_servo_speed(1, 2500);
 #endif
 
 	/* Initialize servoblaster engine */
-	servod_init(); /* exits on error */
+	if (servod_init() != 0) {
+		fprintf(stderr, "Unable to create servod instance: %s\n", servod_error());
+		servod_close();
+		return -1;
+	}
 	servod_dump(STDOUT_FILENO);
 
 	if (udata.daemonize && daemon(0,1) < 0)
