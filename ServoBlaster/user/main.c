@@ -380,10 +380,11 @@ void print_help(int fdout)
 	printfd(fdout, "\t'debug' - print debug information\n");
 	printfd(fdout, "\t'config' - print servod configuration\n");
 	printfd(fdout, "\t'stop' - terminate servod daemon\n");
+	printfd(fdout, "\t'set N range Min-Max' - Width in steps, us or %% of full scale\n");
 	printfd(fdout, "\t'set N Width' - Width in ticks, us, %% of range\n");
 	printfd(fdout, "\t'set N speed Speed' - Speed in ms\n");
 	printfd(fdout, "\t'set N to Width' - move to Width with Speed\n");
-	printfd(fdout, "\t'set N range Min-Max' - Width in steps, us or %% of full scale\n");
+	printfd(fdout, "\t'set N dir cw|ccw' - set rotation direction\n");
 	printfd(fdout, "\t'reset N' - set initial width, if configured\n");
 	printfd(fdout, "\t'get N' - get current width in ticks\n");
 	printfd(fdout, "\t'get N info' - get servo configuration info\n");
@@ -470,6 +471,15 @@ process_socket_cmd(servod_cfg_t *cfg, int fd)
 				}
 				continue;
 			}
+			if (buffer_arg(arg, "dir", &arg)) {
+				if (strcmp(arg, "cw") == 0)
+					servos[servo].flags |= SRVF_REVERSE;
+				else if (strcmp(arg, "ccw") == 0)
+					servos[servo].flags &= ~SRVF_REVERSE;
+				else
+					printfd(sock, "invalid argument, must be 'cw' or 'ccw'!\n");
+				continue;
+			}
 			if (buffer_arg(arg, "speed", &arg)) {
 				uint32_t millis = (uint32_t)atoi(arg);
 				if (set_servo_speed(servo, millis) != 0)
@@ -512,19 +522,20 @@ process_socket_cmd(servod_cfg_t *cfg, int fd)
 				break;
 			servo_t *s = &servos[servo];
 			if (buffer_is(arg, "info")) {
-				printfd(sock, "servo:  %d\n", servo);
-				printfd(sock, "    gpio:   %d\n", s->gpio);
-				printfd(sock, "    range:  %d-%d us\n", s->min_width * cfg->servo_step_time_us,
+				printfd(sock, "servo: %d\n", servo);
+				printfd(sock, "    gpio:     %d\n", s->gpio);
+				printfd(sock, "    range:    %d-%d us\n", s->min_width * cfg->servo_step_time_us,
 					s->max_width * cfg->servo_step_time_us);
 				if (s->rim)
-					printfd(sock, "    speed:  %dms\n", s->rim);
+					printfd(sock, "    speed:    %dms\n", s->rim);
 				if (s->width >= s->min_width)
-					printfd(sock, "    width:  %d us\n", s->width * cfg->servo_step_time_us);
+					printfd(sock, "    width:    %d us\n", s->width * cfg->servo_step_time_us);
 				else
-					printfd(sock, "    width: unknown\n");
+					printfd(sock, "    width:   unknown\n");
 				if (s->init != -1)
-					printfd(sock, "    init:   %d us\n", s->init * cfg->servo_step_time_us);
-				printfd(sock, "    active: %s\n", get_servo_state(servo) ? "true" : "false");
+					printfd(sock, "    init:     %d us\n", s->init * cfg->servo_step_time_us);
+				printfd(sock, "    rotation: %s\n", (s->flags & SRVF_REVERSE) ? "CW" : "CCW");
+				printfd(sock, "    active:   %s\n", get_servo_state(servo) ? "true" : "false");
 				continue;
 			}
 			int width = s->width;

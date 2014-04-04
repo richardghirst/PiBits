@@ -205,7 +205,7 @@ int  set_servo_ex(uint8_t servo, uint8_t wtype, int width);
 int  set_servo_speed(uint8_t servo, uint32_t rim);
 
 /* servo update handler, as there is no synchronization implemented yet
- * must be called from the thread which calls set_servo() every cycle_time_us
+ * must be called every cycle_time_us from the thread which uses set_servo() 
  */
 void servo_speed_handler(void);
 

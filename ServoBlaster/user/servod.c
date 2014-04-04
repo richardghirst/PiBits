@@ -1125,7 +1125,7 @@ servod_dump(int fdout)
 	if (board_rev() > 1)
 		printfd(fdout, "Using P5 pins:               %s\n", p5pins);
 	printfd(fdout, "\nServo mapping:\n");
-	printfd(fdout, "     #    Header-pin     GPIO      Range, us     Init, us Speed, ms\n");
+	printfd(fdout, "     #    Header-pin     GPIO      Range, us     Init, us Speed, ms  Dir\n");
 	for (int i = 0; i < MAX_SERVOS; i++) {
 		if (servos[i].gpio == DMY)
 			continue;
@@ -1139,6 +1139,7 @@ servod_dump(int fdout)
 			printfd(fdout, "         ");
 		if (servos[i].rim != 0)
 			printfd(fdout, "   %7d", servos[i].rim);
+		printfd(fdout, "  %s", (servos[i].flags & SRVF_REVERSE) ? "CW" : "CCW");
 		printfd(fdout, "\n");
 	}
 	printfd(fdout, "\n");

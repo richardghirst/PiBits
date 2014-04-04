@@ -172,6 +172,11 @@ Options:
   --min-max=servo:min-max{N|Nus|N%%} Comma separated list of min/max pulse
                       width range for servos. Range must be within the limit
                       specified by --min and --max values
+  --speed=servo:rim   Speed of travel from mit to max range in milliseconds.
+                      Will be rounded to the nearest integer number of steps
+                      per pulse.Comma separated
+  --dir=servo:cw      Change default CCW movement to CW, so 0%% will refer to
+                      max pulse width. Comma separated.\n"
   --init=servo:{N|Nus|N%%} Comma separated list of initial pulse width for servos
   --invert            Inverts outputs
   --port=N            TCP port number to listen for set/get commands

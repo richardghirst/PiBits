@@ -338,6 +338,57 @@ parse_servo_init(servod_cfg_t *cfg, char *arg, const char *name)
 	}
 }
 
+static void
+parse_servo_speed(char *arg, const char *name)
+{
+	char *p;
+	int servo;
+	uint32_t speed;
+
+	p = arg;
+	for(p = arg; *p; p++) {
+		servo = (uint32_t)strtol(p, &p, 10);
+		if (*p != ':')
+			fatal("Invalid %s format specified\n", name);
+		speed = strtol(p+1, &p, 10);
+
+		if (*p == ',' || *p == '\0') {
+			if (set_servo_speed(servo, speed) != 0)
+				fatal("Unable to set servo %d speed from %d to %d in %u msec. Check if servo range is configured properly\n", 
+				servo, servos[servo].min_width, servos[servo].max_width, speed);
+			if (*p == '\0')
+				break;
+			continue;
+		}
+		fatal("Invalid %s format specified\n", name);
+	}
+}
+
+static void
+parse_servo_dir(char *arg, const char *name)
+{
+	char *p;
+	char *next;
+	int servo;
+
+	p = arg;
+	for(p = arg; p != NULL; ) {
+		servo = (uint32_t)strtol(p, &p, 10);
+		if (*p != ':')
+			fatal("Invalid %s format specified\n", name);
+		next = strchr(++p, ',');
+		if (next != NULL) {
+			*next = '\0';
+			next ++;
+		}
+		if (strcmp(p, "cw") == 0)
+			servos[servo].flags |= SRVF_REVERSE;
+		else if (strcmp(p, "ccw") != 0)
+			fatal("Invalid %s format specified\n", name);
+		p = next;
+	}
+}
+
 int
 servod_args(servod_cfg_t *cfg, int argc, char **argv)
 {
@@ -349,6 +400,8 @@ servod_args(servod_cfg_t *cfg, int argc, char **argv)
 	char *servo_min_arg = NULL;
 	char *servo_max_arg = NULL;
 	char *servo_min_max = NULL;
+	char *servo_speed_arg = NULL;
+	char *servo_dir_arg = NULL;
 	char *servo_init_arg = NULL;
 	char *idle_timeout_arg = NULL;
 	char *cycle_time_arg = NULL;
@@ -366,6 +419,8 @@ servod_args(servod_cfg_t *cfg, int argc, char **argv)
 		{ "min",          required_argument, 0, 'm' },
 		{ "max",          required_argument, 0, 'x' },
 		{ "min-max",      required_argument, 0, 'r' },
+		{ "speed",        required_argument, 0, 'S' },
+		{ "dir",          required_argument, 0, 'D' },
 		{ "invert",       no_argument,       0, 'i' },
 		{ "cycle-time",   required_argument, 0, 'c' },
 		{ "step-size",    required_argument, 0, 's' },
@@ -424,6 +479,11 @@ servod_args(servod_cfg_t *cfg, int argc, char **argv)
 				"  --min-max=servo:min-max{N|Nus|N%%} Comma separated list of min/max pulse\n"
 				"                      width range for servos. Range must be within the limit\n"
 				"                      specified by --min and --max values\n"
+				"  --speed=servo:rim   Speed of travel from mit to max range in milliseconds.\n"
+				"                      Will be rounded to the nearest integer number of steps\n"
+				"                      per pulse.Comma separated\n"
+				"  --dir=servo:cw      Change default CCW movement to CW, so 0%% will refer to\n"
+				"                      max pulse width. Comma separated.\n"
 				"  --init=servo:{N|Nus|N%%} Comma separated list of initial pulse width for servos\n"
 				"  --invert            Inverts outputs\n"
 				"  --port=N            TCP port number to listen for set/get commands\n"
@@ -482,6 +542,10 @@ servod_args(servod_cfg_t *cfg, int argc, char **argv)
 			servo_min_max = optarg;
 		} else if (c == 'I') {
 			servo_init_arg = optarg;
+		} else if (c == 'S') {
+			servo_speed_arg = optarg;
+		} else if (c == 'D') {
+			servo_dir_arg = optarg;
 		} else if (c == 'P') {
 			udata->cmd_port = atoi(optarg);
 			if (udata->cmd_port > 0xFFFF)
@@ -577,6 +641,12 @@ servod_args(servod_cfg_t *cfg, int argc, char **argv)
 
 	if (servo_init_arg)
 		parse_servo_init(cfg, servo_init_arg, "init");
+
+	if (servo_speed_arg)
+		parse_servo_speed(servo_speed_arg, "speed");
+
+	if (servo_dir_arg)
+		parse_servo_dir(servo_dir_arg, "dir");
 
 	for(i = 0; i < MAX_SERVOS; i++) {
 		/* sanity check for initial width */
