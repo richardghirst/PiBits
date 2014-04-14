@@ -345,12 +345,15 @@ the shipped version of that script).
 Using TCP command mode (--port command line parameter) following commands
 are supported:
 
+servoctl help
 servoctl debug
 servoctl config
 servoctl get {servo} {|us|%} - get current width in ticks, us or % of range
 servoctl get {servo} info - get servo info
 servoctl set {servo} width{N|Nus|N%} - set width in ticks, us or % of range
 servoctl set {servo} range min-max{N|Nus|N%} - set range in ticks, us or % of cycle time
+servoctl set {servo} speed Rim - set servo speed of Range in Milliseconds 
+servoctl set {servo} to width{N|Nus|N%} - set width in ticks, us or % of range with speed control
 servoctl stop - terminate servod
 
 Commands can be comma separated.
