@@ -1,13 +1,30 @@
+#CC = g++
 
-.PHONY: all install uninstall
-all:	servod
+CFLAGS += -std=gnu99
+CFLAGS += -g
+CFLAGS += -Wall
+# uncomment to change optimization level
+# CFLAGS += -O2
 
-servod:	servod.c
-	gcc -Wall -g -O2 -o servod servod.c -lm
+LIBS = -lm -L. -lservod
 
-install: servod
+APP  = servod
+LIB  = libservod.a
+OBJS = main.o args.o
+
+.PHONY: all install uninstall libinstall
+
+all: $(APP)
+
+$(LIB):	servod.o
+	ar rcs $(LIB) servod.o
+
+$(APP):	$(OBJS) $(LIB)
+	$(CC) $(CFLAGS) -o $(APP) $(OBJS) $(LIBS)
+
+install: $(APP)
 	[ "`id -u`" = "0" ] || { echo "Must be run as root"; exit 1; }
-	cp -f servod /usr/local/sbin
+	cp -f $(APP) /usr/local/sbin
 	cp -f init-script /etc/init.d/servoblaster
 	chmod 755 /etc/init.d/servoblaster
 	update-rc.d servoblaster defaults 92 08
@@ -19,7 +36,18 @@ uninstall:
 	update-rc.d servoblaster remove
 	rm -f /usr/local/sbin/servod
 	rm -f /etc/init.d/servoblaster
+	rm -f /usr/local/lib/lib$(LIB)
+	rm -f /usr/local/include/servod.h
+
+libinstall: $(LIB)
+	[ `id -u` = "0" ] || { echo "Must be run as root"; exit 1; }
+	cp -f $(LIB) /usr/local/lib
+	cp -f servod.h /usr/local/include
+	chmod 644 /usr/local/lib/$(LIB)
+	chmod 644 /usr/local/include/servod.h
 
 clean:
-	rm -f servod
+	$(RM) -f *.o $(APP) $(LIB)
 
+%.o: %.c %.h Makefile servod.h args.h
+	$(CC) -c $(CFLAGS) $< -o $@
