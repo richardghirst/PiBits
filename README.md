@@ -135,6 +135,12 @@ This library was developed for TBideas high power LED driver. You can read more 
 Pete Nelson (https://github.com/petiepooo)
 Edgar Siva (https://github.com/edgarsilva)
 
+## Want to support this project?
+
+The best way to contribute is to write code for the features you would like to see and to make a pull-requests.
+
+Another way is to send [DogeCoin](http://www.dogecoin.com) donations to [D7pQ9CoUepazpGbwxgiaGPCMBk8i66u4yE](dogecoin:D7pQ9CoUepazpGbwxgiaGPCMBk8i66u4yE?amount=1000&message=Pi-blaster%20donation&label=pi-blaster). Donations will be used to help promote hardware hacking. For example by giving away servos and led strips during hackathons.
+
 ## License
 
 Released under The MIT License.
