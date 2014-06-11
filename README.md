@@ -10,8 +10,16 @@ Pi-blaster project is based on the excellent work of Richard Hirst for ServoBlas
 
 ## How to build and install
 
-This project is only distributed as source files. Building it is extremely simple.
+This project is only distributed as source files. The build environment is based on Autotools to allow for compilation on the Raspberry Pi, or cross-compilation.
 
+You may need to install 'autoconf' to build. On Raspbian and other Debian based systems this can be achieved with:
+
+    sudo apt-get install autoconf
+
+Building is extremely simple:
+
+    ./autogen.sh
+    ./configure
     make
 
 To start pi-blaster and have it relaunched automatically on every reboot:
@@ -134,6 +142,7 @@ This library was developed for TBideas high power LED driver. You can read more 
 
 Pete Nelson (https://github.com/petiepooo)
 Edgar Siva (https://github.com/edgarsilva)
+Alex Lennon (https://github.com/ajlennon)
 
 ## Want to support this project?
 
