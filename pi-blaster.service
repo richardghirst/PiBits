@@ -1,0 +1,9 @@
+[Unit]
+Description="Daemon for PWM control of the Raspberry PI GPIO pins"
+
+[Service]
+ExecStart=/usr/sbin/pi-blaster
+ExecReload=/bin/kill -s HUP $MAINPID
+
+[Install]
+WantedBy=multi-user.target
