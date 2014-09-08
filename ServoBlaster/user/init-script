@@ -13,7 +13,7 @@
 PATH=/sbin:/usr/sbin:/bin:/usr/bin
 . /lib/init/vars.sh
 
-OPTS="--idle-timeout=2000"
+OPTS=""
 
 res=0
 
