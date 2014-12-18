@@ -42,11 +42,8 @@ static uint8_t known_pins[] = {
         4,      // P1-7
         17,     // P1-11
         18,     // P1-12
-#if REVISION == 2
         27,     // P1-13
-#else
         21,     // P1-13
-#endif
         22,     // P1-15
         23,     // P1-16
         24,     // P1-18
@@ -145,6 +142,8 @@ static uint8_t pin2gpio[8];
 
 #define DELAY_VIA_PWM		0
 #define DELAY_VIA_PCM		1
+
+#define LENGTH(x)  (sizeof(x) / sizeof(x[0]))
 
 typedef struct {
 	uint32_t info, src, dst, length,
@@ -264,7 +263,7 @@ is_known_pin(int pin){
   int found = 0;
 
   int i;
-  for (i = 0; i < NUM_CHANNELS; i++) {
+  for (i = 0; i < LENGTH(known_pins); i++) { //NUM_CHANNELS
     if (known_pins[i] == pin) {
       found = 1;
       break;
@@ -348,7 +347,7 @@ set_pin(int pin, float width)
   if (is_known_pin(pin)){
     set_pin2gpio(pin, width);
   }else{
-    printf("Not a known pin for pi-blaster");
+    fprintf(stderr, "Not a known pin for pi-blaster\n");
   }
 }
 
@@ -360,7 +359,7 @@ release_pin(int pin)
   if (is_known_pin(pin)){
     release_pin2gpio(pin);
   }else{
-    printf("Not a known pin for pi-blaster");
+    fprintf(stderr, "Not a known pin for pi-blaster\n");
   }
 }
 
