@@ -68,16 +68,17 @@
 #define DMA_CHAN_MAX		14
 #define DMA_CHAN_DEFAULT	14
 
-#define DMA_BASE		0x20007000
-#define DMA_LEN			DMA_CHAN_SIZE * (DMA_CHAN_MAX+1)
-#define PWM_BASE		0x2020C000
-#define PWM_LEN			0x28
-#define CLK_BASE	        0x20101000
-#define CLK_LEN			0xA8
-#define GPIO_BASE		0x20200000
-#define GPIO_LEN		0x100
-#define PCM_BASE		0x20203000
-#define PCM_LEN			0x24
+#define PERI_DEFAULT_BASE	0x20000000
+#define DMA_OFFSET			0x7000
+#define DMA_LEN				DMA_CHAN_SIZE * (DMA_CHAN_MAX+1)
+#define PWM_OFFSET			0x20C000
+#define PWM_LEN				0x28
+#define CLK_OFFSET			0x101000
+#define CLK_LEN				0xA8
+#define GPIO_OFFSET			0x200000
+#define GPIO_LEN			0x100
+#define PCM_OFFSET			0x203000
+#define PCM_LEN				0x24
 
 #define DMA_NO_WIDE_BURSTS	(1<<26)
 #define DMA_WAIT_RESP		(1<<3)
@@ -558,7 +559,7 @@ setup_sighandlers(void)
 }
 
 static void
-init_ctrl_data(void)
+init_ctrl_data(uint32_t peri_base)
 {
 	dma_cb_t *cbp = cb_base;
 	uint32_t phys_fifo_addr, cbinfo;
@@ -576,10 +577,10 @@ init_ctrl_data(void)
 	}
 
 	if (delay_hw == DELAY_VIA_PWM) {
-		phys_fifo_addr = (PWM_BASE | 0x7e000000) + 0x18;
+		phys_fifo_addr = ((peri_base + PWM_OFFSET) | 0x7e000000) + 0x18;
 		cbinfo = DMA_NO_WIDE_BURSTS | DMA_WAIT_RESP | DMA_D_DREQ | DMA_PER_MAP(5);
 	} else {
-		phys_fifo_addr = (PCM_BASE | 0x7e000000) + 0x04;
+		phys_fifo_addr = ((peri_base + PCM_OFFSET) | 0x7e000000) + 0x04;
 		cbinfo = DMA_NO_WIDE_BURSTS | DMA_WAIT_RESP | DMA_D_DREQ | DMA_PER_MAP(2);
 	}
 
@@ -845,48 +846,95 @@ go_go_go(void)
 	}
 }
 
-/* Determining the board revision is a lot more complicated than it should be
- * (see comments in wiringPi for details).  We will just look at the last two
- * digits of the Revision string and treat '00' and '01' as errors, '02' and
- * '03' as rev 1, and any other hex value as rev 2.
- */
-static int
-board_rev(void)
+/* CPU Info reader of RPi.GPIO (http://sourceforge.net/p/raspberry-gpio-python/code/ci/default/tree/source/cpuinfo.c) */
+static char *get_cpuinfo_revision(char *revision)
 {
-	char buf[128];
-	char *ptr, *end, *res;
-	static int rev = 0;
 	FILE *fp;
+	char buffer[1024];
+	char hardware[1024];
+	int  rpi_found = 0;
 
-	if (rev)
-		return rev;
+	if ((fp = fopen("/proc/cpuinfo", "r")) == NULL)
+		return 0;
 
-	fp = fopen("/proc/cpuinfo", "r");
-
-	if (!fp)
-		fatal("Unable to open /proc/cpuinfo: %m\n");
-
-	while ((res = fgets(buf, 128, fp))) {
-		if (!strncmp(buf, "Revision", 8))
-			break;
+	while (!feof(fp))
+	{
+		fgets(buffer, sizeof(buffer), fp);
+		sscanf(buffer, "Hardware	: %s", hardware);
+		if (strcmp(hardware, "BCM2708") == 0 ||
+			strcmp(hardware, "BCM2709") == 0 ||
+			strcmp(hardware, "BCM2835") == 0 ||
+			strcmp(hardware, "BCM2836") == 0)
+				rpi_found = 1;
+		sscanf(buffer, "Revision	: %s", revision);
 	}
+
 	fclose(fp);
 
-	if (!res)
-		fatal("servod: No 'Revision' record in /proc/cpuinfo\n");
+	if (!rpi_found)
+		revision = NULL;
 
-	ptr = buf + strlen(buf) - 3;
-	rev = strtol(ptr, &end, 16);
-	if (end != ptr + 2)
-		fatal("servod: Failed to parse Revision string\n");
-	if (rev < 1)
-		fatal("servod: Invalid board Revision\n");
-	else if (rev < 4)
-		rev = 1;
+	return revision;
+}
+
+static int board_rev(void)
+{
+	char raw_revision[1024] = { '\0' };
+	int len;
+	char *revision;
+
+	if (get_cpuinfo_revision(raw_revision) == NULL)
+		return -1;
+
+	/* Get last four characters (ignore preceeding 1000 for overvolt) */
+	len = strlen(raw_revision);
+	if (len > 4)
+		revision = (char *)&raw_revision + len - 4;
 	else
-		rev = 2;
+		revision = raw_revision;
 
-	return rev;
+	if ((strcmp(revision, "0002") == 0) ||
+		(strcmp(revision, "0003") == 0))
+			return 1;
+	else if ((strcmp(revision, "0004") == 0) ||
+			 (strcmp(revision, "0005") == 0) ||
+			 (strcmp(revision, "0006") == 0) ||
+			 (strcmp(revision, "0007") == 0) ||
+			 (strcmp(revision, "0008") == 0) ||
+			 (strcmp(revision, "0009") == 0) ||
+			 (strcmp(revision, "000d") == 0) ||
+			 (strcmp(revision, "000e") == 0) ||
+			 (strcmp(revision, "000f") == 0))
+	{
+
+		return 2; /* revision 2 */
+	}
+	else if (strcmp(revision, "0011") == 0)
+		return 0; /* compute module */
+	else
+		return 3; /* assume B+ (0010) or A+ (0012) or RPi2 */
+}
+
+static uint32_t parse_peri_base(void)
+{
+	uint32_t peri_base = PERI_DEFAULT_BASE;
+	unsigned char buf[4];
+	FILE *fp;
+
+	/* Get Peri Base from device-tree */
+	if ((fp = fopen("/proc/device-tree/soc/ranges", "rb")) != NULL)
+	{
+		fseek(fp, 4, SEEK_SET);
+
+		if (fread(buf, 1, sizeof buf, fp) == sizeof buf)
+		{
+			peri_base = buf[0] << 24 | buf[1] << 16 | buf[2] << 8 | buf[3] << 0;
+		}
+
+		fclose(fp);
+	}
+
+	return peri_base;
 }
 
 static void
@@ -1048,6 +1096,7 @@ main(int argc, char **argv)
 	char *step_time_arg = NULL;
 	char *dma_chan_arg = NULL;
 	char *p;
+	uint32_t peri_base;
 	int daemonize = 1;
 
 	setvbuf(stdout, NULL, _IOLBF, 0);
@@ -1216,6 +1265,7 @@ main(int argc, char **argv)
 		servo_max_ticks = DEFAULT_SERVO_MAX_US / step_time_us;
 	}
 
+	peri_base = parse_peri_base();
 	num_samples = cycle_time_us / step_time_us;
 	num_cbs =     num_samples * 2 + MAX_SERVOS;
 	num_pages =   (num_cbs * sizeof(dma_cb_t) + num_samples * 4 +
@@ -1233,6 +1283,7 @@ main(int argc, char **argv)
 	}
 
 	printf("\nBoard revision:            %7d\n", board_rev());
+	printf("Peripherals Base:                %7x\n", peri_base);
 	printf("Using hardware:                %s\n", delay_hw == DELAY_VIA_PWM ? "PWM" : "PCM");
 	printf("Using DMA channel:         %7d\n", dma_chan);
 	if (idle_timeout)
@@ -1261,12 +1312,12 @@ main(int argc, char **argv)
 	init_idle_timers();
 	setup_sighandlers();
 
-	dma_reg = map_peripheral(DMA_BASE, DMA_LEN);
+	dma_reg = map_peripheral(peri_base + DMA_OFFSET, DMA_LEN);
 	dma_reg += dma_chan * DMA_CHAN_SIZE / sizeof(uint32_t);
-	pwm_reg = map_peripheral(PWM_BASE, PWM_LEN);
-	pcm_reg = map_peripheral(PCM_BASE, PCM_LEN);
-	clk_reg = map_peripheral(CLK_BASE, CLK_LEN);
-	gpio_reg = map_peripheral(GPIO_BASE, GPIO_LEN);
+	pwm_reg = map_peripheral(peri_base + PWM_OFFSET, PWM_LEN);
+	pcm_reg = map_peripheral(peri_base + PCM_OFFSET, PCM_LEN);
+	clk_reg = map_peripheral(peri_base + CLK_OFFSET, CLK_LEN);
+	gpio_reg = map_peripheral(peri_base + GPIO_OFFSET, GPIO_LEN);
 
 	/*
 	 * Map the pages to our virtual address space; this reserves them and
@@ -1321,7 +1372,7 @@ main(int argc, char **argv)
 	}
 	restore_gpio_modes = 1;
 
-	init_ctrl_data();
+	init_ctrl_data(peri_base);
 	init_hardware();
 
 	unlink(DEVFILE);
