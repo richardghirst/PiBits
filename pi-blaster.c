@@ -33,6 +33,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <sys/mman.h>
+#include "mailbox.h"
 
 static char VERSION[] = "0.1.1";
 
@@ -53,12 +54,12 @@ static uint8_t known_pins[] = {
 // pin2gpio array is not setup as empty to avoid locking all GPIO
 // inputs as PWM, they are set on the fly by the pin param passed.
 static uint8_t pin2gpio[8];
-static uint32_t periph_virt_base;
 
 // Set num of possible PWM channels based on the known pins size.
 #define NUM_CHANNELS    (sizeof(known_pins)/sizeof(known_pins[0]))
 
 #define DEVFILE			"/dev/pi-blaster"
+#define DEVFILE_MBOX    "/dev/pi-blaster-mbox"
 
 #define PAGE_SIZE		4096
 #define PAGE_SHIFT		12
@@ -146,6 +147,15 @@ static uint32_t periph_virt_base;
 
 #define LENGTH(x)  (sizeof(x) / sizeof(x[0]))
 
+#define BUS_TO_PHYS(x) ((x)&~0xC0000000)
+
+static struct {
+	int handle;		/* From mbox_open() */
+	unsigned mem_ref;	/* From mem_alloc() */
+	unsigned bus_addr;	/* From mem_lock() */
+	uint8_t *virt_addr;	/* From mapmem() */
+} mbox;
+
 typedef struct {
 	uint32_t info, src, dst, length,
 		 stride, next, pad[2];
@@ -156,14 +166,8 @@ struct ctl {
 	dma_cb_t cb[NUM_CBS];
 };
 
-typedef struct {
-	uint8_t *virtaddr;
-	uint32_t physaddr;
-} page_map_t;
-
-page_map_t *page_map;
-
-static uint8_t *virtbase;
+static uint32_t periph_virt_base;
+static uint32_t mem_flag;
 
 static volatile uint32_t *pwm_reg;
 static volatile uint32_t *pcm_reg;
@@ -211,7 +215,8 @@ terminate(int dummy)
 {
 	int i;
 
-	if (dma_reg && virtbase) {
+	printf("Resetting DMA...\n");
+	if (dma_reg && mbox.virt_addr) {
 		for (i = 0; i < NUM_CHANNELS; i++)
 			channel_pwm[i] = 0;
 		update_pwm();
@@ -219,7 +224,18 @@ terminate(int dummy)
 		dma_reg[DMA_CS] = DMA_RESET;
 		udelay(10);
 	}
+
+	printf("Freeing mbox memory...\n");
+	if (mbox.virt_addr != NULL) {
+		unmapmem(mbox.virt_addr, NUM_PAGES * PAGE_SIZE);
+		mem_unlock(mbox.handle, mbox.mem_ref);
+		mem_free(mbox.handle, mbox.mem_ref);
+	}
+	printf("Unlink %s...\n", DEVFILE);
 	unlink(DEVFILE);
+	printf("Unlink %s...\n", DEVFILE_MBOX);
+	unlink(DEVFILE_MBOX);
+
 	exit(1);
 }
 
@@ -270,17 +286,19 @@ get_model(void)
 
 	if (board_model == 1) {
 		periph_virt_base = 0x20000000;
+		mem_flag         = 0x0c;
 	} else {
 		periph_virt_base = 0x3f000000;
+		mem_flag         = 0x04;
 	}
 }
 
 static uint32_t
 mem_virt_to_phys(void *virt)
 {
-	uint32_t offset = (uint8_t *)virt - virtbase;
+	uint32_t offset = (uint8_t *)virt - mbox.virt_addr;
 
-	return page_map[offset >> PAGE_SHIFT].physaddr + (offset % PAGE_SIZE);
+	return mbox.bus_addr + offset;
 }
 
 static void *
@@ -444,7 +462,7 @@ update_pwm()
 
 	uint32_t phys_gpclr0 = 0x7e200000 + 0x28;
 	uint32_t phys_gpset0 = 0x7e200000 + 0x1c;
-	struct ctl *ctl = (struct ctl *)virtbase;
+	struct ctl *ctl = (struct ctl *)mbox.virt_addr;
 	uint32_t mask;
 
 	int i, j;
@@ -483,42 +501,6 @@ update_pwm()
 }
 
 static void
-make_pagemap(void)
-{
-	int i, fd, memfd, pid;
-	char pagemap_fn[64];
-
-	page_map = malloc(NUM_PAGES * sizeof(*page_map));
-	if (page_map == 0)
-		fatal("pi-blaster: Failed to malloc page_map: %m\n");
-	memfd = open("/dev/mem", O_RDWR);
-	if (memfd < 0)
-		fatal("pi-blaster: Failed to open /dev/mem: %m\n");
-	pid = getpid();
-	sprintf(pagemap_fn, "/proc/%d/pagemap", pid);
-	fd = open(pagemap_fn, O_RDONLY);
-	if (fd < 0)
-		fatal("pi-blaster: Failed to open %s: %m\n", pagemap_fn);
-	if (lseek(fd, (uint32_t)virtbase >> 9, SEEK_SET) !=
-						(uint32_t)virtbase >> 9) {
-		fatal("pi-blaster: Failed to seek on %s: %m\n", pagemap_fn);
-	}
-	for (i = 0; i < NUM_PAGES; i++) {
-		uint64_t pfn;
-		page_map[i].virtaddr = virtbase + i * PAGE_SIZE;
-		// Following line forces page to be allocated
-		page_map[i].virtaddr[0] = 0;
-		if (read(fd, &pfn, sizeof(pfn)) != sizeof(pfn))
-			fatal("pi-blaster: Failed to read %s: %m\n", pagemap_fn);
-		if (((pfn >> 55) & 0x1bf) != 0x10c)
-			fatal("pi-blaster: Page %d not present (pfn 0x%016llx)\n", i, pfn);
-		page_map[i].physaddr = (uint32_t)pfn << PAGE_SHIFT | 0x40000000;
-	}
-	close(fd);
-	close(memfd);
-}
-
-static void
 setup_sighandlers(void)
 {
 	int i;
@@ -537,8 +519,12 @@ setup_sighandlers(void)
 static void
 init_ctrl_data(void)
 {
-	struct ctl *ctl = (struct ctl *)virtbase;
+    printf("Initializing DMA Control...\n");
+printf("1\n");
+	struct ctl *ctl = (struct ctl *)mbox.virt_addr;
+printf("1\n");
 	dma_cb_t *cbp = ctl->cb;
+printf("1\n");
 	uint32_t phys_fifo_addr;
 	uint32_t phys_gpclr0 = 0x7e200000 + 0x28;
 	uint32_t phys_gpset0 = 0x7e200000 + 0x1c;
@@ -549,7 +535,7 @@ init_ctrl_data(void)
 		phys_fifo_addr = (PWM_BASE | 0x7e000000) + 0x18;
 	else
 		phys_fifo_addr = (PCM_BASE | 0x7e000000) + 0x04;
-
+printf("1\n");
 	memset(ctl->sample, 0, sizeof(ctl->sample));
 
 	// Calculate a mask to turn off all the servos
@@ -565,18 +551,27 @@ init_ctrl_data(void)
 	 *    address which can be either the gpclr0 register or the gpset0 register
 	 *  - 2nd command waits for a trigger from an external source (PWM or PCM)
 	 */
+printf("1\n");
 	for (i = 0; i < NUM_SAMPLES; i++) {
+printf("i: %d, cbp: %p\n", i, (void *)cbp);
 		/* First DMA command */
 		cbp->info = DMA_NO_WIDE_BURSTS | DMA_WAIT_RESP;
+printf("ctl->sample: %p\n", (void *)ctl->sample);
 		cbp->src = mem_virt_to_phys(ctl->sample + i);
+printf("2\n");
 		if (invert_mode)
 			cbp->dst = phys_gpset0;
 		else
 			cbp->dst = phys_gpclr0;
+printf("2\n");
 		cbp->length = 4;
+printf("2\n");
 		cbp->stride = 0;
+printf("2\n");
 		cbp->next = mem_virt_to_phys(cbp + 1);
+printf("2\n");
 		cbp++;
+printf("2\n");
 		/* Second DMA command */
 		if (delay_hw == DELAY_VIA_PWM)
 			cbp->info = DMA_NO_WIDE_BURSTS | DMA_WAIT_RESP | DMA_D_DREQ | DMA_PER_MAP(5);
@@ -588,15 +583,18 @@ init_ctrl_data(void)
 		cbp->stride = 0;
 		cbp->next = mem_virt_to_phys(cbp + 1);
 		cbp++;
+printf("2\n");
 	}
 	cbp--;
 	cbp->next = mem_virt_to_phys(ctl->cb);
+	printf("1\n");
 }
 
 static void
 init_hardware(void)
 {
-	struct ctl *ctl = (struct ctl *)virtbase;
+    printf("Initializing PWM HW...\n");
+    struct ctl *ctl = (struct ctl *)mbox.virt_addr;
 
 	if (delay_hw == DELAY_VIA_PWM) {
 		// Initialise PWM
@@ -667,7 +665,8 @@ init_pwm(void){
 static void
 init_channel_pwm(void)
 {
-	int i;
+    printf("Initializing Channels...\n");
+    int i;
 	for (i = 0; i < NUM_CHANNELS; i++)
 		channel_pwm[i] = 0;
 }
@@ -689,7 +688,7 @@ go_go_go(void)
 
 		if ((n = getline(&lineptr, &linelen, fp)) < 0)
 			continue;
-		//fprintf(stderr, "[%d]%s", n, lineptr);
+		fprintf(stderr, "[%d]%s", n, lineptr);
 		n = sscanf(lineptr, "%d=%f%c", &servo, &value, &nl);
 		if (n !=3 || nl != '\n') {
 			//fprintf(stderr, "Bad input: %s", lineptr);
@@ -772,6 +771,23 @@ parseargs(int argc, char **argv)
 	}
 }
 
+int mbox_open() {
+   int file_desc;
+
+   // open a char device file used for communicating with kernel mbox driver
+   file_desc = open(DEVFILE_MBOX, 0);
+   if (file_desc < 0) {
+      printf("Can't open device file: %s\n", DEVFILE_MBOX);
+      printf("Try creating a device file with: sudo mknod %s c %d 0\n", DEVFILE_MBOX, MAJOR_NUM);
+      exit(-1);
+   }
+   return file_desc;
+}
+
+void mbox_close(int file_desc) {
+  close(file_desc);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -794,16 +810,24 @@ main(int argc, char **argv)
 	clk_reg = map_peripheral(CLK_BASE, CLK_LEN);
 	gpio_reg = map_peripheral(GPIO_BASE, GPIO_LEN);
 
-	virtbase = mmap(NULL, NUM_PAGES * PAGE_SIZE, PROT_READ|PROT_WRITE,
-			MAP_SHARED|MAP_ANONYMOUS|MAP_NORESERVE|MAP_LOCKED,
-			-1, 0);
-	if (virtbase == MAP_FAILED)
-		fatal("pi-blaster: Failed to mmap physical pages: %m\n");
-	if ((unsigned long)virtbase & (PAGE_SIZE-1))
+    /* Use the mailbox interface to the VC to ask for physical memory */
+    unlink(DEVFILE_MBOX);
+    if (mknod(DEVFILE_MBOX, S_IFCHR|0600, makedev(MAJOR_NUM, 0)) < 0)
+        fatal("Failed to create mailbox device\n");
+    mbox.handle = mbox_open();
+    if (mbox.handle < 0)
+        fatal("Failed to open mailbox\n");
+    mbox.mem_ref = mem_alloc(mbox.handle, NUM_PAGES * PAGE_SIZE, PAGE_SIZE, mem_flag);
+    /* TODO: How do we know that succeeded? */
+    printf("mem_ref %u\n", mbox.mem_ref);
+    mbox.bus_addr = mem_lock(mbox.handle, mbox.mem_ref);
+    printf("bus_addr = %#x\n", mbox.bus_addr);
+    mbox.virt_addr = mapmem(BUS_TO_PHYS(mbox.bus_addr), NUM_PAGES * PAGE_SIZE);
+    printf("virt_addr %p\n", mbox.virt_addr);
+
+	if ((unsigned long)mbox.virt_addr & (PAGE_SIZE-1))
 		fatal("pi-blaster: Virtual address is not page aligned\n");
-
-	make_pagemap();
-
+		
 	init_ctrl_data();
 	init_hardware();
 	init_channel_pwm();
