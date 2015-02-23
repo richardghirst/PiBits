@@ -34,7 +34,7 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 
-static char VERSION[] = "0.1.0";
+static char VERSION[] = "0.1.1";
 
 // Created new known_pins with raspberry pi list of pins
 // to compare against the param received.
@@ -53,6 +53,7 @@ static uint8_t known_pins[] = {
 // pin2gpio array is not setup as empty to avoid locking all GPIO
 // inputs as PWM, they are set on the fly by the pin param passed.
 static uint8_t pin2gpio[8];
+static uint32_t periph_virt_base;
 
 // Set num of possible PWM channels based on the known pins size.
 #define NUM_CHANNELS    (sizeof(known_pins)/sizeof(known_pins[0]))
@@ -78,15 +79,15 @@ static uint8_t pin2gpio[8];
 #define NUM_PAGES		((NUM_CBS * 32 + NUM_SAMPLES * 4 + \
 					PAGE_SIZE - 1) >> PAGE_SHIFT)
 
-#define DMA_BASE		0x20007000
+#define DMA_BASE		(periph_virt_base + 0x00007000)
 #define DMA_LEN			0x24
-#define PWM_BASE		0x2020C000
+#define PWM_BASE		(periph_virt_base + 0x0020C000)
 #define PWM_LEN			0x28
-#define CLK_BASE	        0x20101000
+#define CLK_BASE		(periph_virt_base + 0x00101000)
 #define CLK_LEN			0xA8
-#define GPIO_BASE		0x20200000
+#define GPIO_BASE		(periph_virt_base + 0x00200000)
 #define GPIO_LEN		0x100
-#define PCM_BASE		0x20203000
+#define PCM_BASE		(periph_virt_base + 0x00203000)
 #define PCM_LEN			0x24
 
 #define DMA_NO_WIDE_BURSTS	(1<<26)
@@ -231,6 +232,47 @@ fatal(char *fmt, ...)
 	vfprintf(stderr, fmt, ap);
 	va_end(ap);
 	terminate(0);
+}
+
+/* 
+ * determine which pi model we are running on 
+ */
+static void
+get_model(void)
+{
+	char buf[128], modelstr[128];
+	char *res;
+	FILE *fp;
+	int board_model = 0;
+
+	modelstr[0] = '\0';
+
+	fp = fopen("/proc/cpuinfo", "r");
+
+	if (!fp)
+		fatal("Unable to open /proc/cpuinfo: %m\n");
+
+	while ((res = fgets(buf, 128, fp))) {
+		if (!strncasecmp("model name", buf, 8))
+			memcpy(modelstr, buf, 128);
+	}
+	fclose(fp);
+
+	if (modelstr[0] == '\0')
+		fatal("servod: No 'Model name' record in /proc/cpuinfo\n");
+
+	if (strstr(modelstr, "ARMv6"))
+		board_model = 1;
+	else if (strstr(modelstr, "ARMv7"))
+		board_model = 2;
+	else
+		fatal("servod: Cannot parse the model name string\n");
+
+	if (board_model == 1) {
+		periph_virt_base = 0x20000000;
+	} else {
+		periph_virt_base = 0x3f000000;
+	}
 }
 
 static uint32_t
@@ -734,6 +776,7 @@ int
 main(int argc, char **argv)
 {
 	parseargs(argc, argv);
+	get_model();
 
 	printf("Using hardware:                 %5s\n", delay_hw == DELAY_VIA_PWM ? "PWM" : "PCM");
 	printf("Number of channels:             %5d\n", NUM_CHANNELS);
@@ -741,6 +784,7 @@ main(int argc, char **argv)
 	printf("PWM steps:                      %5d\n", NUM_SAMPLES);
 	printf("Maximum period (100  %%):      %5dus\n", CYCLE_TIME_US);
 	printf("Minimum period (%1.3f%%):      %5dus\n", 100.0*SAMPLE_US / CYCLE_TIME_US, SAMPLE_US);
+	printf("DMA Base:                  %#010x\n", DMA_BASE);
 
 	setup_sighandlers();
 
