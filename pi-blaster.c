@@ -40,15 +40,15 @@ static char VERSION[] = "0.1.1";
 // Created new known_pins with raspberry pi list of pins
 // to compare against the param received.
 static uint8_t known_pins[] = {
-        4,      // P1-7
-        17,     // P1-11
-        18,     // P1-12
-        27,     // P1-13
-        21,     // P1-13
-        22,     // P1-15
-        23,     // P1-16
-        24,     // P1-18
-        25,     // P1-22
+		4,      // P1-7
+		17,     // P1-11
+		18,     // P1-12
+		27,     // P1-13
+		21,     // P1-13
+		22,     // P1-15
+		23,     // P1-16
+		24,     // P1-18
+		25,     // P1-22
 };
 
 // pin2gpio array is not setup as empty to avoid locking all GPIO
@@ -235,6 +235,7 @@ terminate(int dummy)
 	unlink(DEVFILE);
 	printf("Unlink %s...\n", DEVFILE_MBOX);
 	unlink(DEVFILE_MBOX);
+	printf("pi-blaster stopped.\n");
 
 	exit(1);
 }
@@ -324,10 +325,10 @@ is_known_pin(int pin){
 
   int i;
   for (i = 0; i < LENGTH(known_pins); i++) { //NUM_CHANNELS
-    if (known_pins[i] == pin) {
-      found = 1;
-      break;
-    }
+	if (known_pins[i] == pin) {
+	  found = 1;
+	  break;
+	}
   }
   return(found);
 }
@@ -341,16 +342,16 @@ set_pin2gpio(int pin, float width){
 
   int i;
   for (i = 0; i < NUM_CHANNELS; i++) {
-    if (pin2gpio[i] == pin || pin2gpio[i] == 0) {
-      if (pin2gpio[i] == 0) {
-        gpio_set(pin, invert_mode);
-        gpio_set_mode(pin, GPIO_MODE_OUT);
-      }
-      pin2gpio[i] = pin;
-      channel_pwm[i] = width;
-      established = 1;
-      break;
-    }
+	if (pin2gpio[i] == pin || pin2gpio[i] == 0) {
+	  if (pin2gpio[i] == 0) {
+		gpio_set(pin, invert_mode);
+		gpio_set_mode(pin, GPIO_MODE_OUT);
+	  }
+	  pin2gpio[i] = pin;
+	  channel_pwm[i] = width;
+	  established = 1;
+	  break;
+	}
   }
 
   return(established);
@@ -365,15 +366,15 @@ compact_pin2gpio(){
   float tmp_channel_pwm[] = { 0,0,0,0,0,0,0,0 };
 
   for (i = 0; i < NUM_CHANNELS; i++) {
-    if (pin2gpio[i] != 0){
-      tmp_pin2gpio[j] = pin2gpio[i];
-      tmp_channel_pwm[j] = channel_pwm[i];
-      j++;
-    }
+	if (pin2gpio[i] != 0){
+	  tmp_pin2gpio[j] = pin2gpio[i];
+	  tmp_channel_pwm[j] = channel_pwm[i];
+	  j++;
+	}
   }
   for (i= 0 ;i < NUM_CHANNELS; i++){
-    pin2gpio[i] = tmp_pin2gpio[i];
-    channel_pwm[i] = tmp_channel_pwm[i];
+	pin2gpio[i] = tmp_pin2gpio[i];
+	channel_pwm[i] = tmp_channel_pwm[i];
   }
 }
 
@@ -387,12 +388,12 @@ release_pin2gpio(int pin)
 
   int i;
   for (i = 0; i < NUM_CHANNELS; i++) {
-    if (pin2gpio[i] == pin) {
-      channel_pwm[i] = 0;
-      pin2gpio[i] = 0;
-      released = 1;
-      break;
-    }
+	if (pin2gpio[i] == pin) {
+	  channel_pwm[i] = 0;
+	  pin2gpio[i] = 0;
+	  released = 1;
+	  break;
+	}
   }
 
   compact_pin2gpio();
@@ -405,9 +406,9 @@ static void
 set_pin(int pin, float width)
 {
   if (is_known_pin(pin)){
-    set_pin2gpio(pin, width);
+	set_pin2gpio(pin, width);
   }else{
-    fprintf(stderr, "Not a known pin for pi-blaster\n");
+	fprintf(stderr, "Not a known pin for pi-blaster\n");
   }
 }
 
@@ -417,9 +418,9 @@ static void
 release_pin(int pin)
 {
   if (is_known_pin(pin)){
-    release_pin2gpio(pin);
+	release_pin2gpio(pin);
   }else{
-    fprintf(stderr, "Not a known pin for pi-blaster\n");
+	fprintf(stderr, "Not a known pin for pi-blaster\n");
   }
 }
 
@@ -476,7 +477,7 @@ update_pwm()
 	/*   Now create a mask of all the pins that should be on */
 	mask = 0;
 	for (i = 0; i < NUM_CHANNELS; i++) {
-    // Check the pin2gpio pin has been set to avoid locking all of them as PWM.
+	// Check the pin2gpio pin has been set to avoid locking all of them as PWM.
 		if (channel_pwm[i] > 0 && pin2gpio[i]) {
 			mask |= 1 << pin2gpio[i];
 		}
@@ -492,7 +493,7 @@ update_pwm()
 			ctl->cb[j*2].dst = phys_gpclr0;
 		mask = 0;
 		for (i = 0; i < NUM_CHANNELS; i++) {
-      // Check the pin2gpio pin has been set to avoid locking all of them as PWM.
+	  // Check the pin2gpio pin has been set to avoid locking all of them as PWM.
 			if ((float)j/NUM_SAMPLES > channel_pwm[i] && pin2gpio[i])
 				mask |= 1 << pin2gpio[i];
 		}
@@ -519,12 +520,9 @@ setup_sighandlers(void)
 static void
 init_ctrl_data(void)
 {
-    printf("Initializing DMA Control...\n");
-printf("1\n");
+	printf("Initializing DMA Control...\n");
 	struct ctl *ctl = (struct ctl *)mbox.virt_addr;
-printf("1\n");
 	dma_cb_t *cbp = ctl->cb;
-printf("1\n");
 	uint32_t phys_fifo_addr;
 	uint32_t phys_gpclr0 = 0x7e200000 + 0x28;
 	uint32_t phys_gpset0 = 0x7e200000 + 0x1c;
@@ -535,13 +533,12 @@ printf("1\n");
 		phys_fifo_addr = (PWM_BASE | 0x7e000000) + 0x18;
 	else
 		phys_fifo_addr = (PCM_BASE | 0x7e000000) + 0x04;
-printf("1\n");
 	memset(ctl->sample, 0, sizeof(ctl->sample));
 
 	// Calculate a mask to turn off all the servos
 	mask = 0;
 	for (i = 0; i < NUM_CHANNELS; i++){
-    mask |= 1 << known_pins[i];
+	mask |= 1 << known_pins[i];
   }
 	for (i = 0; i < NUM_SAMPLES; i++)
 		ctl->sample[i] = mask;
@@ -551,27 +548,18 @@ printf("1\n");
 	 *    address which can be either the gpclr0 register or the gpset0 register
 	 *  - 2nd command waits for a trigger from an external source (PWM or PCM)
 	 */
-printf("1\n");
 	for (i = 0; i < NUM_SAMPLES; i++) {
-printf("i: %d, cbp: %p\n", i, (void *)cbp);
 		/* First DMA command */
 		cbp->info = DMA_NO_WIDE_BURSTS | DMA_WAIT_RESP;
-printf("ctl->sample: %p\n", (void *)ctl->sample);
 		cbp->src = mem_virt_to_phys(ctl->sample + i);
-printf("2\n");
 		if (invert_mode)
 			cbp->dst = phys_gpset0;
 		else
 			cbp->dst = phys_gpclr0;
-printf("2\n");
 		cbp->length = 4;
-printf("2\n");
 		cbp->stride = 0;
-printf("2\n");
 		cbp->next = mem_virt_to_phys(cbp + 1);
-printf("2\n");
 		cbp++;
-printf("2\n");
 		/* Second DMA command */
 		if (delay_hw == DELAY_VIA_PWM)
 			cbp->info = DMA_NO_WIDE_BURSTS | DMA_WAIT_RESP | DMA_D_DREQ | DMA_PER_MAP(5);
@@ -583,18 +571,16 @@ printf("2\n");
 		cbp->stride = 0;
 		cbp->next = mem_virt_to_phys(cbp + 1);
 		cbp++;
-printf("2\n");
 	}
 	cbp--;
 	cbp->next = mem_virt_to_phys(ctl->cb);
-	printf("1\n");
 }
 
 static void
 init_hardware(void)
 {
-    printf("Initializing PWM HW...\n");
-    struct ctl *ctl = (struct ctl *)mbox.virt_addr;
+	printf("Initializing PWM HW...\n");
+	struct ctl *ctl = (struct ctl *)mbox.virt_addr;
 
 	if (delay_hw == DELAY_VIA_PWM) {
 		// Initialise PWM
@@ -654,7 +640,7 @@ init_pin2gpio(void)
 {
   int i;
   for (i = 0; i < NUM_CHANNELS; i++)
-    pin2gpio[i] = 0;
+	pin2gpio[i] = 0;
 }
 
 static void
@@ -665,8 +651,8 @@ init_pwm(void){
 static void
 init_channel_pwm(void)
 {
-    printf("Initializing Channels...\n");
-    int i;
+	printf("Initializing Channels...\n");
+	int i;
 	for (i = 0; i < NUM_CHANNELS; i++)
 		channel_pwm[i] = 0;
 }
@@ -692,13 +678,13 @@ go_go_go(void)
 		n = sscanf(lineptr, "%d=%f%c", &servo, &value, &nl);
 		if (n !=3 || nl != '\n') {
 			//fprintf(stderr, "Bad input: %s", lineptr);
-      n = sscanf(lineptr, "release %d", &servo);
-      if (n != 1 || nl != '\n') {
-        fprintf(stderr, "Bad input: %s", lineptr);
-      } else {
-        // Release Pin from pin2gpio array if the release command is received.
-        release_pwm(servo);
-      }
+	  n = sscanf(lineptr, "release %d", &servo);
+	  if (n != 1 || nl != '\n') {
+		fprintf(stderr, "Bad input: %s", lineptr);
+	  } else {
+		// Release Pin from pin2gpio array if the release command is received.
+		release_pwm(servo);
+	  }
 		} else if (servo < 0){ // removed servo validation against CHANNEL_NUM no longer needed since now we used real GPIO names
 			fprintf(stderr, "Invalid channel number %d\n", servo);
 		} else if (value < 0 || value > 1) {
@@ -777,9 +763,9 @@ int mbox_open() {
    // open a char device file used for communicating with kernel mbox driver
    file_desc = open(DEVFILE_MBOX, 0);
    if (file_desc < 0) {
-      printf("Can't open device file: %s\n", DEVFILE_MBOX);
-      printf("Try creating a device file with: sudo mknod %s c %d 0\n", DEVFILE_MBOX, MAJOR_NUM);
-      exit(-1);
+	  printf("Can't open device file: %s\n", DEVFILE_MBOX);
+	  printf("Try creating a device file with: sudo mknod %s c %d 0\n", DEVFILE_MBOX, MAJOR_NUM);
+	  exit(-1);
    }
    return file_desc;
 }
@@ -810,20 +796,20 @@ main(int argc, char **argv)
 	clk_reg = map_peripheral(CLK_BASE, CLK_LEN);
 	gpio_reg = map_peripheral(GPIO_BASE, GPIO_LEN);
 
-    /* Use the mailbox interface to the VC to ask for physical memory */
-    unlink(DEVFILE_MBOX);
-    if (mknod(DEVFILE_MBOX, S_IFCHR|0600, makedev(MAJOR_NUM, 0)) < 0)
-        fatal("Failed to create mailbox device\n");
-    mbox.handle = mbox_open();
-    if (mbox.handle < 0)
-        fatal("Failed to open mailbox\n");
-    mbox.mem_ref = mem_alloc(mbox.handle, NUM_PAGES * PAGE_SIZE, PAGE_SIZE, mem_flag);
-    /* TODO: How do we know that succeeded? */
-    printf("mem_ref %u\n", mbox.mem_ref);
-    mbox.bus_addr = mem_lock(mbox.handle, mbox.mem_ref);
-    printf("bus_addr = %#x\n", mbox.bus_addr);
-    mbox.virt_addr = mapmem(BUS_TO_PHYS(mbox.bus_addr), NUM_PAGES * PAGE_SIZE);
-    printf("virt_addr %p\n", mbox.virt_addr);
+	/* Use the mailbox interface to the VC to ask for physical memory */
+	unlink(DEVFILE_MBOX);
+	if (mknod(DEVFILE_MBOX, S_IFCHR|0600, makedev(MAJOR_NUM, 0)) < 0)
+		fatal("Failed to create mailbox device\n");
+	mbox.handle = mbox_open();
+	if (mbox.handle < 0)
+		fatal("Failed to open mailbox\n");
+	mbox.mem_ref = mem_alloc(mbox.handle, NUM_PAGES * PAGE_SIZE, PAGE_SIZE, mem_flag);
+	/* TODO: How do we know that succeeded? */
+	printf("mem_ref %u\n", mbox.mem_ref);
+	mbox.bus_addr = mem_lock(mbox.handle, mbox.mem_ref);
+	printf("bus_addr = %#x\n", mbox.bus_addr);
+	mbox.virt_addr = mapmem(BUS_TO_PHYS(mbox.bus_addr), NUM_PAGES * PAGE_SIZE);
+	printf("virt_addr %p\n", mbox.virt_addr);
 
 	if ((unsigned long)mbox.virt_addr & (PAGE_SIZE-1))
 		fatal("pi-blaster: Virtual address is not page aligned\n");
@@ -831,10 +817,10 @@ main(int argc, char **argv)
 	init_ctrl_data();
 	init_hardware();
 	init_channel_pwm();
-  // Init pin2gpio array with 0/false values to avoid locking all of them as PWM.
+	// Init pin2gpio array with 0/false values to avoid locking all of them as PWM.
 	init_pin2gpio();
-  // Only calls update_pwm after ctrl_data calculates the pin mask to unlock all pins on start.
-  init_pwm();
+	// Only calls update_pwm after ctrl_data calculates the pin mask to unlock all pins on start.
+	init_pwm();
 
 	unlink(DEVFILE);
 	if (mkfifo(DEVFILE, 0666) < 0)
@@ -845,6 +831,7 @@ main(int argc, char **argv)
 	if (daemon(0,1) < 0)
 		fatal("pi-blaster: Failed to daemonize process: %m\n");
 
+	printf("Initialisation finished, pi-blaster now running as daemon, waiting for input on %s\n", DEVFILE);
 	go_go_go();
 
 	return 0;
