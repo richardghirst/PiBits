@@ -242,3 +242,73 @@ unsigned execute_qpu(int file_desc, unsigned num_qpus, unsigned control, unsigne
    mbox_property(file_desc, p);
    return p[5];
 }
+
+unsigned get_firmware_revision(int file_desc)
+{
+   int i=0;
+   unsigned p[32];
+   p[i++] = 0; // size
+   p[i++] = 0x00000000; // process request
+
+   p[i++] = 0x10000; // (the tag id)
+   p[i++] = 4; // (size of the buffer)
+   p[i++] = 0; // (size of the data)
+   p[i++] = 0; // response buffer
+
+   p[i++] = 0x00000000; // end tag
+   p[0] = i*sizeof *p; // actual size
+   
+   mbox_property(file_desc, p);
+   return p[5];
+}
+
+unsigned get_board_model(int file_desc)
+{
+   int i=0;
+   unsigned p[32];
+   p[i++] = 0; // size
+   p[i++] = 0x00000000; // process request
+
+   p[i++] = 0x10001; // (the tag id)
+   p[i++] = 4; // (size of the buffer)
+   p[i++] = 0; // (size of the data)
+   p[i++] = 0; // response buffer
+
+   p[i++] = 0x00000000; // end tag
+   p[0] = i*sizeof *p; // actual size
+   
+   mbox_property(file_desc, p);
+   // TODO: check return code in p[1]==0x80000000, otherwise... error
+//    printf("get_board_model mbox response buffer:\n");
+//    int pi = 0;
+//    int length = p[0]/sizeof *p;
+//   for (; pi < length; pi++) {
+//        printf("%d: %#x\n", pi, p[pi]);
+//   }
+   return p[5];
+}
+
+unsigned get_board_revision(int file_desc)
+{
+   int i=0;
+   unsigned p[32];
+   p[i++] = 0; // size
+   p[i++] = 0x00000000; // process request
+
+   p[i++] = 0x10002; // (the tag id)
+   p[i++] = 4; // (size of the buffer)
+   p[i++] = 0; // (size of the data)
+   p[i++] = 0; // response buffer
+
+   p[i++] = 0x00000000; // end tag
+   p[0] = i*sizeof *p; // actual size
+   
+   mbox_property(file_desc, p);
+//    printf("get_board_revision mbox response buffer:\n");
+//    int pi = 0;
+//    int length = p[0]/sizeof *p;
+//   for (; pi < length; pi++) {
+//        printf("%d: %#x\n", pi, p[pi]);
+//   }
+   return p[5];
+}
