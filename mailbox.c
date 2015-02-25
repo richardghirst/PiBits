@@ -91,8 +91,9 @@ static int mbox_property(int file_desc, void *buf)
    }
 
 #ifdef DEBUG
+   // TODO: check return code in p[1]==0x80000000, otherwise... error
    unsigned *p = buf; int i; unsigned size = *(unsigned *)buf;
-   for (i=0; i<size/4; i++)
+   for (i=0; i<size/sizeof *p; i++)
       printf("%04x: 0x%08x\n", i*sizeof *p, p[i]);
 #endif
    return ret_val;
@@ -278,13 +279,6 @@ unsigned get_board_model(int file_desc)
    p[0] = i*sizeof *p; // actual size
    
    mbox_property(file_desc, p);
-   // TODO: check return code in p[1]==0x80000000, otherwise... error
-//    printf("get_board_model mbox response buffer:\n");
-//    int pi = 0;
-//    int length = p[0]/sizeof *p;
-//   for (; pi < length; pi++) {
-//        printf("%d: %#x\n", pi, p[pi]);
-//   }
    return p[5];
 }
 
