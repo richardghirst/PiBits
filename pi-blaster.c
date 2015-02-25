@@ -216,6 +216,23 @@ static float channel_pwm[NUM_CHANNELS];
 static void set_pwm(int channel, float value);
 static void update_pwm();
 
+int mbox_open() {
+   int file_desc;
+
+   // open a char device file used for communicating with kernel mbox driver
+   file_desc = open(DEVFILE_MBOX, 0);
+   if (file_desc < 0) {
+	  printf("Can't open device file: %s\n", DEVFILE_MBOX);
+	  printf("Try creating a device file with: sudo mknod %s c %d 0\n", DEVFILE_MBOX, MAJOR_NUM);
+	  exit(-1);
+   }
+   return file_desc;
+}
+
+void mbox_close(int file_desc) {
+  close(file_desc);
+}
+
 static void
 gpio_set_mode(uint32_t pin, uint32_t mode)
 {
@@ -261,8 +278,13 @@ terminate(int dummy)
 	printf("Freeing mbox memory...\n");
 	if (mbox.virt_addr != NULL) {
 		unmapmem(mbox.virt_addr, NUM_PAGES * PAGE_SIZE);
+		if (mbox.handle <= 2) {
+			/* we need to reopen mbox file */
+			mbox.handle = mbox_open();
+		}
 		mem_unlock(mbox.handle, mbox.mem_ref);
 		mem_free(mbox.handle, mbox.mem_ref);
+		mbox_close(mbox.handle);
 	}
 	printf("Unlink %s...\n", DEVFILE);
 	unlink(DEVFILE);
@@ -604,7 +626,7 @@ init_ctrl_data(void)
 static void
 init_hardware(void)
 {
-	printf("Initializing PWM HW...\n");
+	printf("Initializing PWM/PCM HW...\n");
 	struct ctl *ctl = (struct ctl *)mbox.virt_addr;
 
 	if (delay_hw == DELAY_VIA_PWM) {
@@ -782,23 +804,6 @@ parseargs(int argc, char **argv)
 	}
 }
 
-int mbox_open() {
-   int file_desc;
-
-   // open a char device file used for communicating with kernel mbox driver
-   file_desc = open(DEVFILE_MBOX, 0);
-   if (file_desc < 0) {
-	  printf("Can't open device file: %s\n", DEVFILE_MBOX);
-	  printf("Try creating a device file with: sudo mknod %s c %d 0\n", DEVFILE_MBOX, MAJOR_NUM);
-	  exit(-1);
-   }
-   return file_desc;
-}
-
-void mbox_close(int file_desc) {
-  close(file_desc);
-}
-
 int
 main(int argc, char **argv)
 {
@@ -841,8 +846,12 @@ main(int argc, char **argv)
 
 	if ((unsigned long)mbox.virt_addr & (PAGE_SIZE-1))
 		fatal("pi-blaster: Virtual address is not page aligned\n");
-		
-	//fatal("TempFatal");
+
+	/* we are done with the mbox */
+	mbox_close(mbox.handle);
+	mbox.handle = -1;
+	
+	//fatal("TempFatal\n");
 
 	init_ctrl_data();
 	init_hardware();
