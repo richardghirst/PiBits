@@ -145,6 +145,39 @@ static uint8_t pin2gpio[8];
 #define DELAY_VIA_PWM		0
 #define DELAY_VIA_PCM		1
 
+/* New Board Revision format: 
+SRRR MMMM PPPP TTTT TTTT VVVV
+
+S scheme (0=old, 1=new)
+R RAM (0=256, 1=512, 2=1024)
+M manufacturer (0='SONY',1='EGOMAN',2='EMBEST',3='UNKNOWN',4='EMBEST')
+P processor (0=2835, 1=2836)
+T type (0='A', 1='B', 2='A+', 3='B+', 4='Pi 2 B', 5='Alpha', 6='Compute Module')
+V revision (0-15)
+*/
+#define BOARD_REVISION_SCHEME_MASK (0x1 << 23)
+#define BOARD_REVISION_SCHEME_OLD (0x0 << 23)
+#define BOARD_REVISION_SCHEME_NEW (0x1 << 23)
+#define BOARD_REVISION_RAM_MASK (0x7 << 20)
+#define BOARD_REVISION_MANUFACTURER_MASK (0xF << 16)
+#define BOARD_REVISION_MANUFACTURER_SONY (0 << 16)
+#define BOARD_REVISION_MANUFACTURER_EGOMAN (1 << 16)
+#define BOARD_REVISION_MANUFACTURER_EMBEST (2 << 16)
+#define BOARD_REVISION_MANUFACTURER_UNKNOWN (3 << 16)
+#define BOARD_REVISION_MANUFACTURER_EMBEST2 (4 << 16)
+#define BOARD_REVISION_PROCESSOR_MASK (0xF << 12)
+#define BOARD_REVISION_PROCESSOR_2835 (0 << 12)
+#define BOARD_REVISION_PROCESSOR_2836 (1 << 12)
+#define BOARD_REVISION_TYPE_MASK (0xFF << 4)
+#define BOARD_REVISION_TYPE_PI1_A (0 << 4)
+#define BOARD_REVISION_TYPE_PI1_B (1 << 4)
+#define BOARD_REVISION_TYPE_PI1_A_PLUS (2 << 4)
+#define BOARD_REVISION_TYPE_PI1_B_PLUS (3 << 4)
+#define BOARD_REVISION_TYPE_PI2_B (4 << 4)
+#define BOARD_REVISION_TYPE_ALPHA (5 << 4)
+#define BOARD_REVISION_TYPE_CM (6 << 4)
+#define BOARD_REVISION_REV_MASK (0xF)
+
 #define LENGTH(x)  (sizeof(x) / sizeof(x[0]))
 
 #define BUS_TO_PHYS(x) ((x)&~0xC0000000)
@@ -255,42 +288,34 @@ fatal(char *fmt, ...)
  * determine which pi model we are running on 
  */
 static void
-get_model(void)
+get_model(unsigned mbox_board_rev)
 {
-	char buf[128], modelstr[128];
-	char *res;
-	FILE *fp;
 	int board_model = 0;
 
-	modelstr[0] = '\0';
-
-	fp = fopen("/proc/cpuinfo", "r");
-
-	if (!fp)
-		fatal("Unable to open /proc/cpuinfo: %m\n");
-
-	while ((res = fgets(buf, 128, fp))) {
-		if (!strncasecmp("model name", buf, 8))
-			memcpy(modelstr, buf, 128);
-	}
-	fclose(fp);
-
-	if (modelstr[0] == '\0')
-		fatal("servod: No 'Model name' record in /proc/cpuinfo\n");
-
-	if (strstr(modelstr, "ARMv6"))
-		board_model = 1;
-	else if (strstr(modelstr, "ARMv7"))
-		board_model = 2;
-	else
-		fatal("servod: Cannot parse the model name string\n");
-
-	if (board_model == 1) {
-		periph_virt_base = 0x20000000;
-		mem_flag         = 0x0c;
+	if ((mbox_board_rev & BOARD_REVISION_SCHEME_MASK) == BOARD_REVISION_SCHEME_NEW) {
+		if ((mbox_board_rev & BOARD_REVISION_TYPE_MASK) == BOARD_REVISION_TYPE_PI2_B) {
+			board_model = 2;
+		} else {
+			// no Pi 2, we assume a Pi 1
+			board_model = 1;
+		}
 	} else {
-		periph_virt_base = 0x3f000000;
-		mem_flag         = 0x04;
+		// if revision scheme is old, we assume a Pi 1
+		board_model = 1;
+	}
+
+	switch(board_model) {
+		case 1:
+			periph_virt_base = 0x20000000;
+			mem_flag         = MEM_FLAG_L1_NONALLOCATING | MEM_FLAG_ZERO;
+			break;
+		case 2:
+			periph_virt_base = 0x3f000000;
+			mem_flag         = MEM_FLAG_L1_NONALLOCATING | MEM_FLAG_ZERO; 
+			break;
+		default:
+			fatal("Unable to detect Board Model from board revision: %#x", mbox_board_rev);
+			break;
 	}
 }
 
@@ -778,7 +803,16 @@ int
 main(int argc, char **argv)
 {
 	parseargs(argc, argv);
-	get_model();
+	/* initialize mbox */
+	unlink(DEVFILE_MBOX);
+	if (mknod(DEVFILE_MBOX, S_IFCHR|0600, makedev(MAJOR_NUM, 0)) < 0)
+		fatal("Failed to create mailbox device\n");
+	mbox.handle = mbox_open();
+	if (mbox.handle < 0)
+		fatal("Failed to open mailbox\n");
+	unsigned mbox_board_rev = get_board_revision(mbox.handle);
+	printf("MBox Board Revision: %#x\n", mbox_board_rev);
+	get_model(mbox_board_rev);
 
 	printf("Using hardware:                 %5s\n", delay_hw == DELAY_VIA_PWM ? "PWM" : "PCM");
 	printf("Number of channels:             %5d\n", NUM_CHANNELS);
@@ -797,12 +831,6 @@ main(int argc, char **argv)
 	gpio_reg = map_peripheral(GPIO_BASE, GPIO_LEN);
 
 	/* Use the mailbox interface to the VC to ask for physical memory */
-	unlink(DEVFILE_MBOX);
-	if (mknod(DEVFILE_MBOX, S_IFCHR|0600, makedev(MAJOR_NUM, 0)) < 0)
-		fatal("Failed to create mailbox device\n");
-	mbox.handle = mbox_open();
-	if (mbox.handle < 0)
-		fatal("Failed to open mailbox\n");
 	mbox.mem_ref = mem_alloc(mbox.handle, NUM_PAGES * PAGE_SIZE, PAGE_SIZE, mem_flag);
 	/* TODO: How do we know that succeeded? */
 	printf("mem_ref %u\n", mbox.mem_ref);
@@ -814,6 +842,8 @@ main(int argc, char **argv)
 	if ((unsigned long)mbox.virt_addr & (PAGE_SIZE-1))
 		fatal("pi-blaster: Virtual address is not page aligned\n");
 		
+	//fatal("TempFatal");
+
 	init_ctrl_data();
 	init_hardware();
 	init_channel_pwm();
