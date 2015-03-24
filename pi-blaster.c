@@ -567,7 +567,7 @@ setup_sighandlers(void)
 static void
 init_ctrl_data(void)
 {
-	printf("Initializing DMA Control...\n");
+	printf("Initializing DMA ...\n");
 	struct ctl *ctl = (struct ctl *)mbox.virt_addr;
 	dma_cb_t *cbp = ctl->cb;
 	uint32_t phys_fifo_addr;
@@ -585,8 +585,8 @@ init_ctrl_data(void)
 	// Calculate a mask to turn off all the servos
 	mask = 0;
 	for (i = 0; i < NUM_CHANNELS; i++){
-	mask |= 1 << known_pins[i];
-  }
+		mask |= 1 << known_pins[i];
+	}
 	for (i = 0; i < NUM_SAMPLES; i++)
 		ctl->sample[i] = mask;
 
@@ -635,11 +635,11 @@ init_hardware(void)
 		udelay(10);
 		clk_reg[PWMCLK_CNTL] = 0x5A000006;		// Source=PLLD (500MHz)
 		udelay(100);
-		clk_reg[PWMCLK_DIV] = 0x5A000000 | (50<<12);	// set pwm div to 50, giving 10MHz
+		clk_reg[PWMCLK_DIV] = 0x5A000000 | (500<<12);	// set pwm div to 500, giving 1MHz
 		udelay(100);
 		clk_reg[PWMCLK_CNTL] = 0x5A000016;		// Source=PLLD and enable
 		udelay(100);
-		pwm_reg[PWM_RNG1] = SAMPLE_US * 10;
+		pwm_reg[PWM_RNG1] = SAMPLE_US;
 		udelay(10);
 		pwm_reg[PWM_DMAC] = PWMDMAC_ENAB | PWMDMAC_THRSHLD;
 		udelay(10);
@@ -653,13 +653,13 @@ init_hardware(void)
 		udelay(100);
 		clk_reg[PCMCLK_CNTL] = 0x5A000006;		// Source=PLLD (500MHz)
 		udelay(100);
-		clk_reg[PCMCLK_DIV] = 0x5A000000 | (50<<12);	// Set pcm div to 50, giving 10MHz
+		clk_reg[PCMCLK_DIV] = 0x5A000000 | (500<<12);	// Set pcm div to 500, giving 1MHz
 		udelay(100);
 		clk_reg[PCMCLK_CNTL] = 0x5A000016;		// Source=PLLD and enable
 		udelay(100);
 		pcm_reg[PCM_TXC_A] = 0<<31 | 1<<30 | 0<<20 | 0<<16; // 1 channel, 8 bits
 		udelay(100);
-		pcm_reg[PCM_MODE_A] = (SAMPLE_US * 10 - 1) << 10;
+		pcm_reg[PCM_MODE_A] = (SAMPLE_US - 1) << 10;
 		udelay(100);
 		pcm_reg[PCM_CS_A] |= 1<<4 | 1<<3;		// Clear FIFOs
 		udelay(100);
@@ -680,6 +680,50 @@ init_hardware(void)
 	if (delay_hw == DELAY_VIA_PCM) {
 		pcm_reg[PCM_CS_A] |= 1<<2;			// Enable Tx
 	}
+}
+
+static void
+debug_dump_hw(void)
+{
+#ifdef DEBUG
+		printf("pwm_reg: %p\n", (void *) pwm_reg);
+		int i;
+		struct ctl *ctl = (struct ctl *)mbox.virt_addr;
+		dma_cb_t *cbp = ctl->cb;
+		i = 0;
+/*
+		for (i = 0; i < NUM_SAMPLES; i++) {
+			printf("DMA Control Block: #%d @0x%08x, \n", i, cbp);
+			printf("info:   0x%08x\n", cbp->info);
+			printf("src:    0x%08x\n", cbp->src);
+			printf("dst:    0x%08x\n", cbp->dst);
+			printf("length: 0x%08x\n", cbp->length);
+			printf("stride: 0x%08x\n", cbp->stride);
+			printf("next:   0x%08x\n", cbp->next);
+			cbp++; // next control block
+		}
+*/
+		printf("PWM_BASE: %p\n", (void *) PWM_BASE);
+		printf("pwm_reg: %p\n", (void *) pwm_reg);
+		for (i=0; i<PWM_LEN/4; i++) {
+			printf("%04x: 0x%08x 0x%08x\n", i, &pwm_reg[i], pwm_reg[i]);
+		}
+		printf("CLK_BASE: %p\n", (void *) CLK_BASE);
+		printf("PWMCLK_CNTL: %x\n", PWMCLK_CNTL);
+		printf("clk_reg[PWMCLK_CNTL]: %p\n", &clk_reg[PWMCLK_CNTL]);
+		printf("PWMCLK_DIV: %x\n", PWMCLK_DIV);
+		printf("clk_reg: %p\n", (void *) clk_reg);
+		printf("virt_to_phys(clk_reg): %x\n", mem_virt_to_phys(clk_reg));
+		for (i=0; i<CLK_LEN/4; i++) {
+			printf("%04x: 0x%08x 0x%08x\n", i, &clk_reg[i], clk_reg[i]);
+		}
+		printf("DMA_BASE: %p\n", (void *) DMA_BASE);
+		printf("dma_reg: %p\n", (void *) dma_reg);
+		printf("virt_to_phys(dma_reg): %x\n", mem_virt_to_phys(dma_reg));
+		for (i=0; i<DMA_LEN/4; i++) {
+			printf("%04x: 0x%08x 0x%08x\n", i, &dma_reg[i], dma_reg[i]);
+		}
+#endif
 }
 
 static void
@@ -860,7 +904,10 @@ main(int argc, char **argv)
 	init_pin2gpio();
 	// Only calls update_pwm after ctrl_data calculates the pin mask to unlock all pins on start.
 	init_pwm();
-
+#ifdef DEBUG
+	debug_dump_hw();
+	//terminate(0);
+#endif
 	unlink(DEVFILE);
 	if (mkfifo(DEVFILE, 0666) < 0)
 		fatal("pi-blaster: Failed to create %s: %m\n", DEVFILE);
