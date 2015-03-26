@@ -82,13 +82,20 @@ static uint8_t pin2gpio[8];
 
 #define DMA_BASE		(periph_virt_base + 0x00007000)
 #define DMA_LEN			0x24
-#define PWM_BASE		(periph_virt_base + 0x0020C000)
+#define PWM_BASE_OFFSET 0x0020C000
+#define PWM_BASE		(periph_virt_base + PWM_BASE_OFFSET)
+#define PWM_PHYS_BASE	(periph_phys_base + PWM_BASE_OFFSET)
 #define PWM_LEN			0x28
-#define CLK_BASE		(periph_virt_base + 0x00101000)
+#define CLK_BASE_OFFSET 0x00101000
+#define CLK_BASE		(periph_virt_base + CLK_BASE_OFFSET)
 #define CLK_LEN			0xA8
-#define GPIO_BASE		(periph_virt_base + 0x00200000)
+#define GPIO_BASE_OFFSET 0x00200000
+#define GPIO_BASE		(periph_virt_base + GPIO_BASE_OFFSET)
+#define GPIO_PHYS_BASE	(periph_phys_base + GPIO_BASE_OFFSET)
 #define GPIO_LEN		0x100
-#define PCM_BASE		(periph_virt_base + 0x00203000)
+#define PCM_BASE_OFFSET 0x00203000
+#define PCM_BASE		(periph_virt_base + PCM_BASE_OFFSET)
+#define PCM_PHYS_BASE	(periph_phys_base + PCM_BASE_OFFSET)
 #define PCM_LEN			0x24
 
 #define DMA_NO_WIDE_BURSTS	(1<<26)
@@ -200,6 +207,7 @@ struct ctl {
 };
 
 static uint32_t periph_virt_base;
+static uint32_t periph_phys_base;
 static uint32_t mem_flag;
 
 static volatile uint32_t *pwm_reg;
@@ -329,10 +337,12 @@ get_model(unsigned mbox_board_rev)
 	switch(board_model) {
 		case 1:
 			periph_virt_base = 0x20000000;
+			periph_phys_base = 0x7e000000;
 			mem_flag         = MEM_FLAG_L1_NONALLOCATING | MEM_FLAG_ZERO;
 			break;
 		case 2:
 			periph_virt_base = 0x3f000000;
+			periph_phys_base = 0x7e000000;
 			mem_flag         = MEM_FLAG_L1_NONALLOCATING | MEM_FLAG_ZERO; 
 			break;
 		default:
@@ -508,8 +518,8 @@ static void
 update_pwm()
 {
 
-	uint32_t phys_gpclr0 = 0x7e200000 + 0x28;
-	uint32_t phys_gpset0 = 0x7e200000 + 0x1c;
+	uint32_t phys_gpclr0 = GPIO_PHYS_BASE + 0x28;
+	uint32_t phys_gpset0 = GPIO_PHYS_BASE + 0x1c;
 	struct ctl *ctl = (struct ctl *)mbox.virt_addr;
 	uint32_t mask;
 
@@ -571,15 +581,15 @@ init_ctrl_data(void)
 	struct ctl *ctl = (struct ctl *)mbox.virt_addr;
 	dma_cb_t *cbp = ctl->cb;
 	uint32_t phys_fifo_addr;
-	uint32_t phys_gpclr0 = 0x7e200000 + 0x28;
-	uint32_t phys_gpset0 = 0x7e200000 + 0x1c;
+	uint32_t phys_gpclr0 = GPIO_PHYS_BASE + 0x28;
+	uint32_t phys_gpset0 = GPIO_PHYS_BASE + 0x1c;
 	uint32_t mask;
 	int i;
 
 	if (delay_hw == DELAY_VIA_PWM)
-		phys_fifo_addr = (PWM_BASE | 0x7e000000) + 0x18;
+		phys_fifo_addr = PWM_PHYS_BASE + 0x18;
 	else
-		phys_fifo_addr = (PCM_BASE | 0x7e000000) + 0x04;
+		phys_fifo_addr = PCM_PHYS_BASE + 0x04;
 	memset(ctl->sample, 0, sizeof(ctl->sample));
 
 	// Calculate a mask to turn off all the servos
@@ -628,7 +638,6 @@ init_hardware(void)
 {
 	printf("Initializing PWM/PCM HW...\n");
 	struct ctl *ctl = (struct ctl *)mbox.virt_addr;
-
 	if (delay_hw == DELAY_VIA_PWM) {
 		// Initialise PWM
 		pwm_reg[PWM_CTL] = 0;
@@ -691,7 +700,6 @@ debug_dump_hw(void)
 		struct ctl *ctl = (struct ctl *)mbox.virt_addr;
 		dma_cb_t *cbp = ctl->cb;
 		i = 0;
-/*
 		for (i = 0; i < NUM_SAMPLES; i++) {
 			printf("DMA Control Block: #%d @0x%08x, \n", i, cbp);
 			printf("info:   0x%08x\n", cbp->info);
@@ -702,7 +710,6 @@ debug_dump_hw(void)
 			printf("next:   0x%08x\n", cbp->next);
 			cbp++; // next control block
 		}
-*/
 		printf("PWM_BASE: %p\n", (void *) PWM_BASE);
 		printf("pwm_reg: %p\n", (void *) pwm_reg);
 		for (i=0; i<PWM_LEN/4; i++) {
@@ -723,6 +730,17 @@ debug_dump_hw(void)
 		for (i=0; i<DMA_LEN/4; i++) {
 			printf("%04x: 0x%08x 0x%08x\n", i, &dma_reg[i], dma_reg[i]);
 		}
+#endif
+}
+
+static void
+debug_dump_samples() {
+#ifdef DEBUG
+	struct ctl *ctl = (struct ctl *)mbox.virt_addr;
+	int i;
+	for (i = 0; i < NUM_SAMPLES; i++) {
+		printf("#%d @0x%08x, \n", i, ctl->sample[i]);
+	}
 #endif
 }
 
@@ -766,22 +784,28 @@ go_go_go(void)
 		if ((n = getline(&lineptr, &linelen, fp)) < 0)
 			continue;
 		fprintf(stderr, "[%d]%s", n, lineptr);
-		n = sscanf(lineptr, "%d=%f%c", &servo, &value, &nl);
-		if (n !=3 || nl != '\n') {
-			//fprintf(stderr, "Bad input: %s", lineptr);
-	  n = sscanf(lineptr, "release %d", &servo);
-	  if (n != 1 || nl != '\n') {
-		fprintf(stderr, "Bad input: %s", lineptr);
-	  } else {
-		// Release Pin from pin2gpio array if the release command is received.
-		release_pwm(servo);
-	  }
-		} else if (servo < 0){ // removed servo validation against CHANNEL_NUM no longer needed since now we used real GPIO names
-			fprintf(stderr, "Invalid channel number %d\n", servo);
-		} else if (value < 0 || value > 1) {
-			fprintf(stderr, "Invalid value %f\n", value);
+		if (!strcmp(lineptr, "debug_regs\n")) {
+			debug_dump_hw();
+		} else if (!strcmp(lineptr, "debug_samples\n")) {
+			debug_dump_samples();
 		} else {
-			set_pwm(servo, value);
+			n = sscanf(lineptr, "%d=%f%c", &servo, &value, &nl);
+			if (n !=3 || nl != '\n') {
+				//fprintf(stderr, "Bad input: %s", lineptr);
+				n = sscanf(lineptr, "release %d", &servo);
+				if (n != 1 || nl != '\n') {
+					fprintf(stderr, "Bad input: %s", lineptr);
+				} else {
+					// Release Pin from pin2gpio array if the release command is received.
+					release_pwm(servo);
+				}
+			} else if (servo < 0){ // removed servo validation against CHANNEL_NUM no longer needed since now we used real GPIO names
+				fprintf(stderr, "Invalid channel number %d\n", servo);
+			} else if (value < 0 || value > 1) {
+				fprintf(stderr, "Invalid value %f\n", value);
+			} else {
+				set_pwm(servo, value);
+			}
 		}
 	}
 }
@@ -905,7 +929,7 @@ main(int argc, char **argv)
 	// Only calls update_pwm after ctrl_data calculates the pin mask to unlock all pins on start.
 	init_pwm();
 #ifdef DEBUG
-	debug_dump_hw();
+	//debug_dump_hw();
 	//terminate(0);
 #endif
 	unlink(DEVFILE);
