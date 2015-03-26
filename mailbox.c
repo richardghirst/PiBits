@@ -37,6 +37,12 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "mailbox.h"
 
+#ifdef DEBUG
+#define dprintf(args...) printf(args)
+#else
+#define dprintf(args...)
+#endif
+
 #define PAGE_SIZE (4*1024)
 
 void *mapmem(unsigned base, unsigned size)
@@ -56,9 +62,7 @@ void *mapmem(unsigned base, unsigned size)
       MAP_SHARED/*|MAP_FIXED*/,
       mem_fd,
       base);
-#ifdef DEBUG
-   printf("base=0x%x, mem=%p\n", base, mem);
-#endif
+   dprintf("base=0x%x, mem=%p\n", base, mem);
    if (mem == MAP_FAILED) {
       printf("mmap error %d\n", (int)mem);
       exit (-1);
@@ -103,7 +107,7 @@ unsigned mem_alloc(int file_desc, unsigned size, unsigned align, unsigned flags)
 {
    int i=0;
    unsigned p[32];
-printf("Requesting %d bytes\n", size);
+dprintf("Requesting %d bytes\n", size);
    p[i++] = 0; // size
    p[i++] = 0x00000000; // process request
 

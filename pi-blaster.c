@@ -189,6 +189,12 @@ V revision (0-15)
 
 #define BUS_TO_PHYS(x) ((x)&~0xC0000000)
 
+#ifdef DEBUG
+#define dprintf(args...) printf(args)
+#else
+#define dprintf(args...)
+#endif
+
 static struct {
 	int handle;		/* From mbox_open() */
 	unsigned mem_ref;	/* From mem_alloc() */
@@ -273,7 +279,7 @@ terminate(int dummy)
 {
 	int i;
 
-	printf("Resetting DMA...\n");
+	dprintf("Resetting DMA...\n");
 	if (dma_reg && mbox.virt_addr) {
 		for (i = 0; i < NUM_CHANNELS; i++)
 			channel_pwm[i] = 0;
@@ -283,7 +289,7 @@ terminate(int dummy)
 		udelay(10);
 	}
 
-	printf("Freeing mbox memory...\n");
+	dprintf("Freeing mbox memory...\n");
 	if (mbox.virt_addr != NULL) {
 		unmapmem(mbox.virt_addr, NUM_PAGES * PAGE_SIZE);
 		if (mbox.handle <= 2) {
@@ -294,9 +300,9 @@ terminate(int dummy)
 		mem_free(mbox.handle, mbox.mem_ref);
 		mbox_close(mbox.handle);
 	}
-	printf("Unlink %s...\n", DEVFILE);
+	dprintf("Unlink %s...\n", DEVFILE);
 	unlink(DEVFILE);
-	printf("Unlink %s...\n", DEVFILE_MBOX);
+	dprintf("Unlink %s...\n", DEVFILE_MBOX);
 	unlink(DEVFILE_MBOX);
 	printf("pi-blaster stopped.\n");
 
@@ -577,7 +583,7 @@ setup_sighandlers(void)
 static void
 init_ctrl_data(void)
 {
-	printf("Initializing DMA ...\n");
+	dprintf("Initializing DMA ...\n");
 	struct ctl *ctl = (struct ctl *)mbox.virt_addr;
 	dma_cb_t *cbp = ctl->cb;
 	uint32_t phys_fifo_addr;
@@ -636,7 +642,7 @@ init_ctrl_data(void)
 static void
 init_hardware(void)
 {
-	printf("Initializing PWM/PCM HW...\n");
+	dprintf("Initializing PWM/PCM HW...\n");
 	struct ctl *ctl = (struct ctl *)mbox.virt_addr;
 	if (delay_hw == DELAY_VIA_PWM) {
 		// Initialise PWM
@@ -760,7 +766,7 @@ init_pwm(void){
 static void
 init_channel_pwm(void)
 {
-	printf("Initializing Channels...\n");
+	dprintf("Initializing Channels...\n");
 	int i;
 	for (i = 0; i < NUM_CHANNELS; i++)
 		channel_pwm[i] = 0;
@@ -783,7 +789,7 @@ go_go_go(void)
 
 		if ((n = getline(&lineptr, &linelen, fp)) < 0)
 			continue;
-		fprintf(stderr, "[%d]%s", n, lineptr);
+		dprintf("[%d]%s", n, lineptr);
 		if (!strcmp(lineptr, "debug_regs\n")) {
 			debug_dump_hw();
 		} else if (!strcmp(lineptr, "debug_samples\n")) {
@@ -906,11 +912,11 @@ main(int argc, char **argv)
 	/* Use the mailbox interface to the VC to ask for physical memory */
 	mbox.mem_ref = mem_alloc(mbox.handle, NUM_PAGES * PAGE_SIZE, PAGE_SIZE, mem_flag);
 	/* TODO: How do we know that succeeded? */
-	printf("mem_ref %u\n", mbox.mem_ref);
+	dprintf("mem_ref %u\n", mbox.mem_ref);
 	mbox.bus_addr = mem_lock(mbox.handle, mbox.mem_ref);
-	printf("bus_addr = %#x\n", mbox.bus_addr);
+	dprintf("bus_addr = %#x\n", mbox.bus_addr);
 	mbox.virt_addr = mapmem(BUS_TO_PHYS(mbox.bus_addr), NUM_PAGES * PAGE_SIZE);
-	printf("virt_addr %p\n", mbox.virt_addr);
+	dprintf("virt_addr %p\n", mbox.virt_addr);
 
 	if ((unsigned long)mbox.virt_addr & (PAGE_SIZE-1))
 		fatal("pi-blaster: Virtual address is not page aligned\n");
@@ -928,10 +934,6 @@ main(int argc, char **argv)
 	init_pin2gpio();
 	// Only calls update_pwm after ctrl_data calculates the pin mask to unlock all pins on start.
 	init_pwm();
-#ifdef DEBUG
-	//debug_dump_hw();
-	//terminate(0);
-#endif
 	unlink(DEVFILE);
 	if (mkfifo(DEVFILE, 0666) < 0)
 		fatal("pi-blaster: Failed to create %s: %m\n", DEVFILE);
