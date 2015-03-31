@@ -72,16 +72,18 @@ static uint8_t pin2gpio[8];
 // will use too much memory bandwidth.  10us is a good value, though you
 // might be ok setting it as low as 2us.
 
-#define CYCLE_TIME_US		10000
+#define CYCLE_TIME_US	10000
 #define SAMPLE_US		10
 #define NUM_SAMPLES		(CYCLE_TIME_US/SAMPLE_US)
 #define NUM_CBS			(NUM_SAMPLES*2)
 
-#define NUM_PAGES		((NUM_CBS * 32 + NUM_SAMPLES * 4 + \
+#define NUM_PAGES		((NUM_CBS * sizeof(dma_cb_t) + NUM_SAMPLES * 4 + \
 					PAGE_SIZE - 1) >> PAGE_SHIFT)
 
 #define DMA_BASE		(periph_virt_base + 0x00007000)
-#define DMA_LEN			0x24
+#define DMA_CHAN_SIZE	0x100 /* size of register space for a single DMA channel */
+#define DMA_CHAN_MAX	14  /* number of DMA Channels we have... actually, there are 15... but channel fifteen is mapped at a different DMA_BASE, so we leave that one alone */
+#define DMA_CHAN_NUM	14  /* the DMA Channel we are using, NOTE: DMA Ch 0 seems to be used by X... better not use it ;) */
 #define PWM_BASE_OFFSET 0x0020C000
 #define PWM_BASE		(periph_virt_base + PWM_BASE_OFFSET)
 #define PWM_PHYS_BASE	(periph_phys_base + PWM_BASE_OFFSET)
@@ -219,7 +221,8 @@ static uint32_t mem_flag;
 static volatile uint32_t *pwm_reg;
 static volatile uint32_t *pcm_reg;
 static volatile uint32_t *clk_reg;
-static volatile uint32_t *dma_reg;
+static volatile uint32_t *dma_virt_base; /* base address of all DMA Channels */
+static volatile uint32_t *dma_reg; /* pointer to the DMA Channel registers we are using */
 static volatile uint32_t *gpio_reg;
 
 static int delay_hw = DELAY_VIA_PWM;
@@ -556,7 +559,7 @@ update_pwm()
 			ctl->cb[j*2].dst = phys_gpclr0;
 		mask = 0;
 		for (i = 0; i < NUM_CHANNELS; i++) {
-	  // Check the pin2gpio pin has been set to avoid locking all of them as PWM.
+			// Check the pin2gpio pin has been set to avoid locking all of them as PWM.
 			if ((float)j/NUM_SAMPLES > channel_pwm[i] && pin2gpio[i])
 				mask |= 1 << pin2gpio[i];
 		}
@@ -731,9 +734,10 @@ debug_dump_hw(void)
 			printf("%04x: 0x%08x 0x%08x\n", i, &clk_reg[i], clk_reg[i]);
 		}
 		printf("DMA_BASE: %p\n", (void *) DMA_BASE);
+		printf("dma_virt_base: %p\n", (void *) dma_virt_base);
 		printf("dma_reg: %p\n", (void *) dma_reg);
 		printf("virt_to_phys(dma_reg): %x\n", mem_virt_to_phys(dma_reg));
-		for (i=0; i<DMA_LEN/4; i++) {
+		for (i=0; i<DMA_CHAN_SIZE/4; i++) {
 			printf("%04x: 0x%08x 0x%08x\n", i, &dma_reg[i], dma_reg[i]);
 		}
 #endif
@@ -903,7 +907,10 @@ main(int argc, char **argv)
 
 	setup_sighandlers();
 
-	dma_reg = map_peripheral(DMA_BASE, DMA_LEN);
+	/* map the registers for all DMA Channels */
+	dma_virt_base = map_peripheral(DMA_BASE, (DMA_CHAN_SIZE * (DMA_CHAN_MAX + 1)));
+	/* set dma_reg to point to the DMA Channel we are using */
+	dma_reg = dma_virt_base + DMA_CHAN_NUM * (DMA_CHAN_SIZE / sizeof(dma_reg));
 	pwm_reg = map_peripheral(PWM_BASE, PWM_LEN);
 	pcm_reg = map_peripheral(PCM_BASE, PCM_LEN);
 	clk_reg = map_peripheral(CLK_BASE, CLK_LEN);

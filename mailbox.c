@@ -88,6 +88,13 @@ void *unmapmem(void *addr, unsigned size)
 
 static int mbox_property(int file_desc, void *buf)
 {
+#ifdef DEBUG
+   unsigned *p = buf; int i; unsigned size = *(unsigned *)buf;
+   printf("MBox Request:\n");
+   for (i=0; i<size/sizeof *p; i++)
+      printf("%04x: 0x%08x\n", i*sizeof *p, p[i]);
+#endif
+
    int ret_val = ioctl(file_desc, IOCTL_MBOX_PROPERTY, buf);
 
    if (ret_val < 0) {
@@ -96,7 +103,8 @@ static int mbox_property(int file_desc, void *buf)
 
 #ifdef DEBUG
    // TODO: check return code in p[1]==0x80000000, otherwise... error
-   unsigned *p = buf; int i; unsigned size = *(unsigned *)buf;
+   p = buf; size = *(unsigned *)buf;
+   printf("MBox Response:\n");
    for (i=0; i<size/sizeof *p; i++)
       printf("%04x: 0x%08x\n", i*sizeof *p, p[i]);
 #endif
@@ -108,6 +116,8 @@ unsigned mem_alloc(int file_desc, unsigned size, unsigned align, unsigned flags)
    int i=0;
    unsigned p[32];
 dprintf("Requesting %d bytes\n", size);
+dprintf("Alignment: %d bytes\n", align);
+dprintf("mem_alloc flags:  0x%x\n", flags);
    p[i++] = 0; // size
    p[i++] = 0x00000000; // process request
 
