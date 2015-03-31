@@ -44,7 +44,7 @@
 
 #define DMY	255	// Used to represent an invalid P1 pin, or unmapped servo
 
-#define NUM_P1PINS	26
+#define NUM_P1PINS	40
 #define NUM_P5PINS	8
 
 #define MAX_SERVOS	32	/* Only 21 really, but this lets you map servo IDs
@@ -234,6 +234,50 @@ static uint8_t rev2_p5pin2gpio_map[] = {
 	DMY,	// P5-7   Ground
 	DMY,	// P5-8   Ground
 };
+
+static uint8_t bplus_p1pin2gpio_map[] = {
+	DMY,	// P1-1   3v3
+	DMY,	// P1-2   5v
+	2,	// P1-3   GPIO 2 (SDA)
+	DMY,	// P1-4   5v
+	3,	// P1-5   GPIO 3 (SCL)
+	DMY,	// P1-6   Ground
+	4,	// P1-7   GPIO 4 (GPCLK0)
+	14,	// P1-8   GPIO 14 (TXD)
+	DMY,	// P1-9   Ground
+	15,	// P1-10  GPIO 15 (RXD)
+	17,	// P1-11  GPIO 17
+	18,	// P1-12  GPIO 18 (PCM_CLK)
+	27,	// P1-13  GPIO 27
+	DMY,	// P1-14  Ground
+	22,	// P1-15  GPIO 22
+	23,	// P1-16  GPIO 23
+	DMY,	// P1-17  3v3
+	24,	// P1-18  GPIO 24
+	10,	// P1-19  GPIO 10 (MOSI)
+	DMY,	// P1-20  Ground
+	9,	// P1-21  GPIO 9 (MISO)
+	25,	// P1-22  GPIO 25
+	11,	// P1-23  GPIO 11 (SCLK)
+	8,	// P1-24  GPIO 8 (CE0)
+	DMY,	// P1-25  Ground
+	7,	// P1-26  GPIO 7 (CE1)
+	DMY,	// P1-27  ID_SD
+	DMY,	// P1-28  ID_SC
+	5,	// P1-29  GPIO 5
+	DMY,	// P1-30  Ground
+	6,	// P1-31  GPIO 5
+	12,	// P1-32  GPIO 12
+	13,	// P1-33  GPIO 13
+	DMY,	// P1-34  Ground
+	19,	// P1-35  GPIO 19
+	16,	// P1-36  GPIO 16
+	26,	// P1-37  GPIO 26
+	20,	// P1-38  GPIO 20
+	DMY,	// P1-39  Ground
+	21,	// P1-40  GPIO 21
+};
+
 
 // cycle_time_us is the pulse cycle time per servo, in microseconds.
 // Typically it should be 20ms, or 20000us.
@@ -883,8 +927,8 @@ board_rev(void)
 		fatal("servod: Invalid board Revision\n");
 	else if (rev < 4)
 		rev = 1;
-	else
-		rev = 2;
+	else if (rev == 16)
+		rev = 3;
 
 	return rev;
 }
@@ -908,9 +952,12 @@ parse_pin_lists(int p1first, char *p1pins, char*p5pins)
 			if (board_rev() == 1) {
 				map = rev1_p1pin2gpio_map;
 				mapcnt = sizeof(rev1_p1pin2gpio_map);
-			} else {
+			} else if(board_rev() == 2) {
 				map = rev2_p1pin2gpio_map;
 				mapcnt = sizeof(rev2_p1pin2gpio_map);
+			} else {
+				map = bplus_p1pin2gpio_map;
+				mapcnt = sizeof(bplus_p1pin2gpio_map);
 			}
 			pNpin2servo = p1pin2servo;
 		} else {
@@ -919,9 +966,12 @@ parse_pin_lists(int p1first, char *p1pins, char*p5pins)
 			if (board_rev() == 1) {
 				map = rev1_p5pin2gpio_map;
 				mapcnt = sizeof(rev1_p5pin2gpio_map);
-			} else {
+			} else if (board_rev() == 2) {
 				map = rev2_p5pin2gpio_map;
 				mapcnt = sizeof(rev2_p5pin2gpio_map);
+			} else {
+				map = NULL;
+				mapcnt = 0;
 			}
 			pNpin2servo = p5pin2servo;
 		}
@@ -989,15 +1039,19 @@ gpio2pinname(uint8_t gpio)
 			sprintf(res, "P5-%d", pin);
 		else
 			fatal("Cannot map GPIO %d to a header pin\n", gpio);
-	} else {
+	} else if (board_rev() == 2) {
 		if ((pin = gpiosearch(gpio, rev2_p1pin2gpio_map, sizeof(rev2_p1pin2gpio_map))))
 			sprintf(res, "P1-%d", pin);
 		else if ((pin = gpiosearch(gpio, rev2_p5pin2gpio_map, sizeof(rev2_p5pin2gpio_map))))
 			sprintf(res, "P5-%d", pin);
 		else
 			fatal("Cannot map GPIO %d to a header pin\n", gpio);
+	} else {
+		if ((pin = gpiosearch(gpio, bplus_p1pin2gpio_map, sizeof(bplus_p1pin2gpio_map))))
+			sprintf(res, "P1-%d", pin);
+		else
+			fatal("Cannot map GPIO %d to a header pin\n", gpio);
 	}
-
 	return res;
 }
 
