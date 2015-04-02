@@ -929,6 +929,8 @@ board_rev(void)
 		rev = 1;
 	else if (rev == 16)
 		rev = 3;
+	else
+		rev = 2;
 
 	return rev;
 }
