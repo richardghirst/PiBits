@@ -896,6 +896,8 @@ main(int argc, char **argv)
 	unsigned mbox_board_rev = get_board_revision(mbox.handle);
 	printf("MBox Board Revision: %#x\n", mbox_board_rev);
 	get_model(mbox_board_rev);
+	unsigned mbox_dma_channels = get_dma_channels(mbox.handle);
+	printf("DMA Channels Info: %#x, using DMA Channel: %d\n", mbox_dma_channels, DMA_CHAN_NUM);
 
 	printf("Using hardware:                 %5s\n", delay_hw == DELAY_VIA_PWM ? "PWM" : "PCM");
 	printf("Number of channels:             %5d\n", NUM_CHANNELS);

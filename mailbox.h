@@ -58,5 +58,6 @@ unsigned qpu_enable(int file_desc, unsigned enable);
 unsigned get_firmware_revision(int file_desc);
 unsigned get_board_model(int file_desc);
 unsigned get_board_revision(int file_desc);
+unsigned get_dma_channels(int file_desc);
 
 #endif /* ifndef _PIBLASTER_MAILBOX_H */

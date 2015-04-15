@@ -320,3 +320,22 @@ unsigned get_board_revision(int file_desc)
 //   }
    return p[5];
 }
+
+unsigned get_dma_channels(int file_desc)
+{
+   int i=0;
+   unsigned p[32];
+   p[i++] = 0; // size
+   p[i++] = 0x00000000; // process request
+
+   p[i++] = 0x60001; // (the tag id)
+   p[i++] = 4; // (size of the buffer)
+   p[i++] = 0; // (size of the data)
+   p[i++] = 0; // response buffer
+
+   p[i++] = 0x00000000; // end tag
+   p[0] = i*sizeof *p; // actual size
+   
+   mbox_property(file_desc, p);
+   return p[5];
+}
