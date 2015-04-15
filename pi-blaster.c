@@ -33,21 +33,22 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <sys/mman.h>
+#include "mailbox.h"
 
-static char VERSION[] = "0.1.0";
+static char VERSION[] = "0.1.1";
 
 // Created new known_pins with raspberry pi list of pins
 // to compare against the param received.
 static uint8_t known_pins[] = {
-        4,      // P1-7
-        17,     // P1-11
-        18,     // P1-12
-        27,     // P1-13
-        21,     // P1-13
-        22,     // P1-15
-        23,     // P1-16
-        24,     // P1-18
-        25,     // P1-22
+		4,      // P1-7
+		17,     // P1-11
+		18,     // P1-12
+		27,     // P1-13
+		21,     // P1-13
+		22,     // P1-15
+		23,     // P1-16
+		24,     // P1-18
+		25,     // P1-22
 };
 
 // pin2gpio array is not setup as empty to avoid locking all GPIO
@@ -58,6 +59,7 @@ static uint8_t pin2gpio[8];
 #define NUM_CHANNELS    (sizeof(known_pins)/sizeof(known_pins[0]))
 
 #define DEVFILE			"/dev/pi-blaster"
+#define DEVFILE_MBOX    "/dev/pi-blaster-mbox"
 
 #define PAGE_SIZE		4096
 #define PAGE_SHIFT		12
@@ -70,23 +72,32 @@ static uint8_t pin2gpio[8];
 // will use too much memory bandwidth.  10us is a good value, though you
 // might be ok setting it as low as 2us.
 
-#define CYCLE_TIME_US		10000
+#define CYCLE_TIME_US	10000
 #define SAMPLE_US		10
 #define NUM_SAMPLES		(CYCLE_TIME_US/SAMPLE_US)
 #define NUM_CBS			(NUM_SAMPLES*2)
 
-#define NUM_PAGES		((NUM_CBS * 32 + NUM_SAMPLES * 4 + \
+#define NUM_PAGES		((NUM_CBS * sizeof(dma_cb_t) + NUM_SAMPLES * 4 + \
 					PAGE_SIZE - 1) >> PAGE_SHIFT)
 
-#define DMA_BASE		0x20007000
-#define DMA_LEN			0x24
-#define PWM_BASE		0x2020C000
+#define DMA_BASE		(periph_virt_base + 0x00007000)
+#define DMA_CHAN_SIZE	0x100 /* size of register space for a single DMA channel */
+#define DMA_CHAN_MAX	14  /* number of DMA Channels we have... actually, there are 15... but channel fifteen is mapped at a different DMA_BASE, so we leave that one alone */
+#define DMA_CHAN_NUM	14  /* the DMA Channel we are using, NOTE: DMA Ch 0 seems to be used by X... better not use it ;) */
+#define PWM_BASE_OFFSET 0x0020C000
+#define PWM_BASE		(periph_virt_base + PWM_BASE_OFFSET)
+#define PWM_PHYS_BASE	(periph_phys_base + PWM_BASE_OFFSET)
 #define PWM_LEN			0x28
-#define CLK_BASE	        0x20101000
+#define CLK_BASE_OFFSET 0x00101000
+#define CLK_BASE		(periph_virt_base + CLK_BASE_OFFSET)
 #define CLK_LEN			0xA8
-#define GPIO_BASE		0x20200000
+#define GPIO_BASE_OFFSET 0x00200000
+#define GPIO_BASE		(periph_virt_base + GPIO_BASE_OFFSET)
+#define GPIO_PHYS_BASE	(periph_phys_base + GPIO_BASE_OFFSET)
 #define GPIO_LEN		0x100
-#define PCM_BASE		0x20203000
+#define PCM_BASE_OFFSET 0x00203000
+#define PCM_BASE		(periph_virt_base + PCM_BASE_OFFSET)
+#define PCM_PHYS_BASE	(periph_phys_base + PCM_BASE_OFFSET)
 #define PCM_LEN			0x24
 
 #define DMA_NO_WIDE_BURSTS	(1<<26)
@@ -143,7 +154,55 @@ static uint8_t pin2gpio[8];
 #define DELAY_VIA_PWM		0
 #define DELAY_VIA_PCM		1
 
+/* New Board Revision format: 
+SRRR MMMM PPPP TTTT TTTT VVVV
+
+S scheme (0=old, 1=new)
+R RAM (0=256, 1=512, 2=1024)
+M manufacturer (0='SONY',1='EGOMAN',2='EMBEST',3='UNKNOWN',4='EMBEST')
+P processor (0=2835, 1=2836)
+T type (0='A', 1='B', 2='A+', 3='B+', 4='Pi 2 B', 5='Alpha', 6='Compute Module')
+V revision (0-15)
+*/
+#define BOARD_REVISION_SCHEME_MASK (0x1 << 23)
+#define BOARD_REVISION_SCHEME_OLD (0x0 << 23)
+#define BOARD_REVISION_SCHEME_NEW (0x1 << 23)
+#define BOARD_REVISION_RAM_MASK (0x7 << 20)
+#define BOARD_REVISION_MANUFACTURER_MASK (0xF << 16)
+#define BOARD_REVISION_MANUFACTURER_SONY (0 << 16)
+#define BOARD_REVISION_MANUFACTURER_EGOMAN (1 << 16)
+#define BOARD_REVISION_MANUFACTURER_EMBEST (2 << 16)
+#define BOARD_REVISION_MANUFACTURER_UNKNOWN (3 << 16)
+#define BOARD_REVISION_MANUFACTURER_EMBEST2 (4 << 16)
+#define BOARD_REVISION_PROCESSOR_MASK (0xF << 12)
+#define BOARD_REVISION_PROCESSOR_2835 (0 << 12)
+#define BOARD_REVISION_PROCESSOR_2836 (1 << 12)
+#define BOARD_REVISION_TYPE_MASK (0xFF << 4)
+#define BOARD_REVISION_TYPE_PI1_A (0 << 4)
+#define BOARD_REVISION_TYPE_PI1_B (1 << 4)
+#define BOARD_REVISION_TYPE_PI1_A_PLUS (2 << 4)
+#define BOARD_REVISION_TYPE_PI1_B_PLUS (3 << 4)
+#define BOARD_REVISION_TYPE_PI2_B (4 << 4)
+#define BOARD_REVISION_TYPE_ALPHA (5 << 4)
+#define BOARD_REVISION_TYPE_CM (6 << 4)
+#define BOARD_REVISION_REV_MASK (0xF)
+
 #define LENGTH(x)  (sizeof(x) / sizeof(x[0]))
+
+#define BUS_TO_PHYS(x) ((x)&~0xC0000000)
+
+#ifdef DEBUG
+#define dprintf(args...) printf(args)
+#else
+#define dprintf(args...)
+#endif
+
+static struct {
+	int handle;		/* From mbox_open() */
+	unsigned mem_ref;	/* From mem_alloc() */
+	unsigned bus_addr;	/* From mem_lock() */
+	uint8_t *virt_addr;	/* From mapmem() */
+} mbox;
 
 typedef struct {
 	uint32_t info, src, dst, length,
@@ -155,19 +214,15 @@ struct ctl {
 	dma_cb_t cb[NUM_CBS];
 };
 
-typedef struct {
-	uint8_t *virtaddr;
-	uint32_t physaddr;
-} page_map_t;
-
-page_map_t *page_map;
-
-static uint8_t *virtbase;
+static uint32_t periph_virt_base;
+static uint32_t periph_phys_base;
+static uint32_t mem_flag;
 
 static volatile uint32_t *pwm_reg;
 static volatile uint32_t *pcm_reg;
 static volatile uint32_t *clk_reg;
-static volatile uint32_t *dma_reg;
+static volatile uint32_t *dma_virt_base; /* base address of all DMA Channels */
+static volatile uint32_t *dma_reg; /* pointer to the DMA Channel registers we are using */
 static volatile uint32_t *gpio_reg;
 
 static int delay_hw = DELAY_VIA_PWM;
@@ -177,6 +232,23 @@ static float channel_pwm[NUM_CHANNELS];
 
 static void set_pwm(int channel, float value);
 static void update_pwm();
+
+int mbox_open() {
+   int file_desc;
+
+   // open a char device file used for communicating with kernel mbox driver
+   file_desc = open(DEVFILE_MBOX, 0);
+   if (file_desc < 0) {
+	  printf("Can't open device file: %s\n", DEVFILE_MBOX);
+	  printf("Try creating a device file with: sudo mknod %s c %d 0\n", DEVFILE_MBOX, MAJOR_NUM);
+	  exit(-1);
+   }
+   return file_desc;
+}
+
+void mbox_close(int file_desc) {
+  close(file_desc);
+}
 
 static void
 gpio_set_mode(uint32_t pin, uint32_t mode)
@@ -210,7 +282,8 @@ terminate(int dummy)
 {
 	int i;
 
-	if (dma_reg && virtbase) {
+	dprintf("Resetting DMA...\n");
+	if (dma_reg && mbox.virt_addr) {
 		for (i = 0; i < NUM_CHANNELS; i++)
 			channel_pwm[i] = 0;
 		update_pwm();
@@ -218,7 +291,24 @@ terminate(int dummy)
 		dma_reg[DMA_CS] = DMA_RESET;
 		udelay(10);
 	}
+
+	dprintf("Freeing mbox memory...\n");
+	if (mbox.virt_addr != NULL) {
+		unmapmem(mbox.virt_addr, NUM_PAGES * PAGE_SIZE);
+		if (mbox.handle <= 2) {
+			/* we need to reopen mbox file */
+			mbox.handle = mbox_open();
+		}
+		mem_unlock(mbox.handle, mbox.mem_ref);
+		mem_free(mbox.handle, mbox.mem_ref);
+		mbox_close(mbox.handle);
+	}
+	dprintf("Unlink %s...\n", DEVFILE);
 	unlink(DEVFILE);
+	dprintf("Unlink %s...\n", DEVFILE_MBOX);
+	unlink(DEVFILE_MBOX);
+	printf("pi-blaster stopped.\n");
+
 	exit(1);
 }
 
@@ -233,12 +323,49 @@ fatal(char *fmt, ...)
 	terminate(0);
 }
 
+/* 
+ * determine which pi model we are running on 
+ */
+static void
+get_model(unsigned mbox_board_rev)
+{
+	int board_model = 0;
+
+	if ((mbox_board_rev & BOARD_REVISION_SCHEME_MASK) == BOARD_REVISION_SCHEME_NEW) {
+		if ((mbox_board_rev & BOARD_REVISION_TYPE_MASK) == BOARD_REVISION_TYPE_PI2_B) {
+			board_model = 2;
+		} else {
+			// no Pi 2, we assume a Pi 1
+			board_model = 1;
+		}
+	} else {
+		// if revision scheme is old, we assume a Pi 1
+		board_model = 1;
+	}
+
+	switch(board_model) {
+		case 1:
+			periph_virt_base = 0x20000000;
+			periph_phys_base = 0x7e000000;
+			mem_flag         = MEM_FLAG_L1_NONALLOCATING | MEM_FLAG_ZERO;
+			break;
+		case 2:
+			periph_virt_base = 0x3f000000;
+			periph_phys_base = 0x7e000000;
+			mem_flag         = MEM_FLAG_L1_NONALLOCATING | MEM_FLAG_ZERO; 
+			break;
+		default:
+			fatal("Unable to detect Board Model from board revision: %#x", mbox_board_rev);
+			break;
+	}
+}
+
 static uint32_t
 mem_virt_to_phys(void *virt)
 {
-	uint32_t offset = (uint8_t *)virt - virtbase;
+	uint32_t offset = (uint8_t *)virt - mbox.virt_addr;
 
-	return page_map[offset >> PAGE_SHIFT].physaddr + (offset % PAGE_SIZE);
+	return mbox.bus_addr + offset;
 }
 
 static void *
@@ -264,10 +391,10 @@ is_known_pin(int pin){
 
   int i;
   for (i = 0; i < LENGTH(known_pins); i++) { //NUM_CHANNELS
-    if (known_pins[i] == pin) {
-      found = 1;
-      break;
-    }
+	if (known_pins[i] == pin) {
+	  found = 1;
+	  break;
+	}
   }
   return(found);
 }
@@ -281,16 +408,16 @@ set_pin2gpio(int pin, float width){
 
   int i;
   for (i = 0; i < NUM_CHANNELS; i++) {
-    if (pin2gpio[i] == pin || pin2gpio[i] == 0) {
-      if (pin2gpio[i] == 0) {
-        gpio_set(pin, invert_mode);
-        gpio_set_mode(pin, GPIO_MODE_OUT);
-      }
-      pin2gpio[i] = pin;
-      channel_pwm[i] = width;
-      established = 1;
-      break;
-    }
+	if (pin2gpio[i] == pin || pin2gpio[i] == 0) {
+	  if (pin2gpio[i] == 0) {
+		gpio_set(pin, invert_mode);
+		gpio_set_mode(pin, GPIO_MODE_OUT);
+	  }
+	  pin2gpio[i] = pin;
+	  channel_pwm[i] = width;
+	  established = 1;
+	  break;
+	}
   }
 
   return(established);
@@ -305,15 +432,15 @@ compact_pin2gpio(){
   float tmp_channel_pwm[] = { 0,0,0,0,0,0,0,0 };
 
   for (i = 0; i < NUM_CHANNELS; i++) {
-    if (pin2gpio[i] != 0){
-      tmp_pin2gpio[j] = pin2gpio[i];
-      tmp_channel_pwm[j] = channel_pwm[i];
-      j++;
-    }
+	if (pin2gpio[i] != 0){
+	  tmp_pin2gpio[j] = pin2gpio[i];
+	  tmp_channel_pwm[j] = channel_pwm[i];
+	  j++;
+	}
   }
   for (i= 0 ;i < NUM_CHANNELS; i++){
-    pin2gpio[i] = tmp_pin2gpio[i];
-    channel_pwm[i] = tmp_channel_pwm[i];
+	pin2gpio[i] = tmp_pin2gpio[i];
+	channel_pwm[i] = tmp_channel_pwm[i];
   }
 }
 
@@ -327,12 +454,12 @@ release_pin2gpio(int pin)
 
   int i;
   for (i = 0; i < NUM_CHANNELS; i++) {
-    if (pin2gpio[i] == pin) {
-      channel_pwm[i] = 0;
-      pin2gpio[i] = 0;
-      released = 1;
-      break;
-    }
+	if (pin2gpio[i] == pin) {
+	  channel_pwm[i] = 0;
+	  pin2gpio[i] = 0;
+	  released = 1;
+	  break;
+	}
   }
 
   compact_pin2gpio();
@@ -345,9 +472,9 @@ static void
 set_pin(int pin, float width)
 {
   if (is_known_pin(pin)){
-    set_pin2gpio(pin, width);
+	set_pin2gpio(pin, width);
   }else{
-    fprintf(stderr, "Not a known pin for pi-blaster\n");
+	fprintf(stderr, "Not a known pin for pi-blaster\n");
   }
 }
 
@@ -357,9 +484,9 @@ static void
 release_pin(int pin)
 {
   if (is_known_pin(pin)){
-    release_pin2gpio(pin);
+	release_pin2gpio(pin);
   }else{
-    fprintf(stderr, "Not a known pin for pi-blaster\n");
+	fprintf(stderr, "Not a known pin for pi-blaster\n");
   }
 }
 
@@ -400,9 +527,9 @@ static void
 update_pwm()
 {
 
-	uint32_t phys_gpclr0 = 0x7e200000 + 0x28;
-	uint32_t phys_gpset0 = 0x7e200000 + 0x1c;
-	struct ctl *ctl = (struct ctl *)virtbase;
+	uint32_t phys_gpclr0 = GPIO_PHYS_BASE + 0x28;
+	uint32_t phys_gpset0 = GPIO_PHYS_BASE + 0x1c;
+	struct ctl *ctl = (struct ctl *)mbox.virt_addr;
 	uint32_t mask;
 
 	int i, j;
@@ -416,7 +543,7 @@ update_pwm()
 	/*   Now create a mask of all the pins that should be on */
 	mask = 0;
 	for (i = 0; i < NUM_CHANNELS; i++) {
-    // Check the pin2gpio pin has been set to avoid locking all of them as PWM.
+	// Check the pin2gpio pin has been set to avoid locking all of them as PWM.
 		if (channel_pwm[i] > 0 && pin2gpio[i]) {
 			mask |= 1 << pin2gpio[i];
 		}
@@ -432,48 +559,12 @@ update_pwm()
 			ctl->cb[j*2].dst = phys_gpclr0;
 		mask = 0;
 		for (i = 0; i < NUM_CHANNELS; i++) {
-      // Check the pin2gpio pin has been set to avoid locking all of them as PWM.
+			// Check the pin2gpio pin has been set to avoid locking all of them as PWM.
 			if ((float)j/NUM_SAMPLES > channel_pwm[i] && pin2gpio[i])
 				mask |= 1 << pin2gpio[i];
 		}
 		ctl->sample[j] = mask;
 	}
-}
-
-static void
-make_pagemap(void)
-{
-	int i, fd, memfd, pid;
-	char pagemap_fn[64];
-
-	page_map = malloc(NUM_PAGES * sizeof(*page_map));
-	if (page_map == 0)
-		fatal("pi-blaster: Failed to malloc page_map: %m\n");
-	memfd = open("/dev/mem", O_RDWR);
-	if (memfd < 0)
-		fatal("pi-blaster: Failed to open /dev/mem: %m\n");
-	pid = getpid();
-	sprintf(pagemap_fn, "/proc/%d/pagemap", pid);
-	fd = open(pagemap_fn, O_RDONLY);
-	if (fd < 0)
-		fatal("pi-blaster: Failed to open %s: %m\n", pagemap_fn);
-	if (lseek(fd, (uint32_t)virtbase >> 9, SEEK_SET) !=
-						(uint32_t)virtbase >> 9) {
-		fatal("pi-blaster: Failed to seek on %s: %m\n", pagemap_fn);
-	}
-	for (i = 0; i < NUM_PAGES; i++) {
-		uint64_t pfn;
-		page_map[i].virtaddr = virtbase + i * PAGE_SIZE;
-		// Following line forces page to be allocated
-		page_map[i].virtaddr[0] = 0;
-		if (read(fd, &pfn, sizeof(pfn)) != sizeof(pfn))
-			fatal("pi-blaster: Failed to read %s: %m\n", pagemap_fn);
-		if (((pfn >> 55) & 0x1bf) != 0x10c)
-			fatal("pi-blaster: Page %d not present (pfn 0x%016llx)\n", i, pfn);
-		page_map[i].physaddr = (uint32_t)pfn << PAGE_SHIFT | 0x40000000;
-	}
-	close(fd);
-	close(memfd);
 }
 
 static void
@@ -495,26 +586,26 @@ setup_sighandlers(void)
 static void
 init_ctrl_data(void)
 {
-	struct ctl *ctl = (struct ctl *)virtbase;
+	dprintf("Initializing DMA ...\n");
+	struct ctl *ctl = (struct ctl *)mbox.virt_addr;
 	dma_cb_t *cbp = ctl->cb;
 	uint32_t phys_fifo_addr;
-	uint32_t phys_gpclr0 = 0x7e200000 + 0x28;
-	uint32_t phys_gpset0 = 0x7e200000 + 0x1c;
+	uint32_t phys_gpclr0 = GPIO_PHYS_BASE + 0x28;
+	uint32_t phys_gpset0 = GPIO_PHYS_BASE + 0x1c;
 	uint32_t mask;
 	int i;
 
 	if (delay_hw == DELAY_VIA_PWM)
-		phys_fifo_addr = (PWM_BASE | 0x7e000000) + 0x18;
+		phys_fifo_addr = PWM_PHYS_BASE + 0x18;
 	else
-		phys_fifo_addr = (PCM_BASE | 0x7e000000) + 0x04;
-
+		phys_fifo_addr = PCM_PHYS_BASE + 0x04;
 	memset(ctl->sample, 0, sizeof(ctl->sample));
 
 	// Calculate a mask to turn off all the servos
 	mask = 0;
 	for (i = 0; i < NUM_CHANNELS; i++){
-    mask |= 1 << known_pins[i];
-  }
+		mask |= 1 << known_pins[i];
+	}
 	for (i = 0; i < NUM_SAMPLES; i++)
 		ctl->sample[i] = mask;
 
@@ -554,19 +645,19 @@ init_ctrl_data(void)
 static void
 init_hardware(void)
 {
-	struct ctl *ctl = (struct ctl *)virtbase;
-
+	dprintf("Initializing PWM/PCM HW...\n");
+	struct ctl *ctl = (struct ctl *)mbox.virt_addr;
 	if (delay_hw == DELAY_VIA_PWM) {
 		// Initialise PWM
 		pwm_reg[PWM_CTL] = 0;
 		udelay(10);
 		clk_reg[PWMCLK_CNTL] = 0x5A000006;		// Source=PLLD (500MHz)
 		udelay(100);
-		clk_reg[PWMCLK_DIV] = 0x5A000000 | (50<<12);	// set pwm div to 50, giving 10MHz
+		clk_reg[PWMCLK_DIV] = 0x5A000000 | (500<<12);	// set pwm div to 500, giving 1MHz
 		udelay(100);
 		clk_reg[PWMCLK_CNTL] = 0x5A000016;		// Source=PLLD and enable
 		udelay(100);
-		pwm_reg[PWM_RNG1] = SAMPLE_US * 10;
+		pwm_reg[PWM_RNG1] = SAMPLE_US;
 		udelay(10);
 		pwm_reg[PWM_DMAC] = PWMDMAC_ENAB | PWMDMAC_THRSHLD;
 		udelay(10);
@@ -580,13 +671,13 @@ init_hardware(void)
 		udelay(100);
 		clk_reg[PCMCLK_CNTL] = 0x5A000006;		// Source=PLLD (500MHz)
 		udelay(100);
-		clk_reg[PCMCLK_DIV] = 0x5A000000 | (50<<12);	// Set pcm div to 50, giving 10MHz
+		clk_reg[PCMCLK_DIV] = 0x5A000000 | (500<<12);	// Set pcm div to 500, giving 1MHz
 		udelay(100);
 		clk_reg[PCMCLK_CNTL] = 0x5A000016;		// Source=PLLD and enable
 		udelay(100);
 		pcm_reg[PCM_TXC_A] = 0<<31 | 1<<30 | 0<<20 | 0<<16; // 1 channel, 8 bits
 		udelay(100);
-		pcm_reg[PCM_MODE_A] = (SAMPLE_US * 10 - 1) << 10;
+		pcm_reg[PCM_MODE_A] = (SAMPLE_US - 1) << 10;
 		udelay(100);
 		pcm_reg[PCM_CS_A] |= 1<<4 | 1<<3;		// Clear FIFOs
 		udelay(100);
@@ -610,11 +701,65 @@ init_hardware(void)
 }
 
 static void
+debug_dump_hw(void)
+{
+#ifdef DEBUG
+		printf("pwm_reg: %p\n", (void *) pwm_reg);
+		int i;
+		struct ctl *ctl = (struct ctl *)mbox.virt_addr;
+		dma_cb_t *cbp = ctl->cb;
+		i = 0;
+		for (i = 0; i < NUM_SAMPLES; i++) {
+			printf("DMA Control Block: #%d @0x%08x, \n", i, cbp);
+			printf("info:   0x%08x\n", cbp->info);
+			printf("src:    0x%08x\n", cbp->src);
+			printf("dst:    0x%08x\n", cbp->dst);
+			printf("length: 0x%08x\n", cbp->length);
+			printf("stride: 0x%08x\n", cbp->stride);
+			printf("next:   0x%08x\n", cbp->next);
+			cbp++; // next control block
+		}
+		printf("PWM_BASE: %p\n", (void *) PWM_BASE);
+		printf("pwm_reg: %p\n", (void *) pwm_reg);
+		for (i=0; i<PWM_LEN/4; i++) {
+			printf("%04x: 0x%08x 0x%08x\n", i, &pwm_reg[i], pwm_reg[i]);
+		}
+		printf("CLK_BASE: %p\n", (void *) CLK_BASE);
+		printf("PWMCLK_CNTL: %x\n", PWMCLK_CNTL);
+		printf("clk_reg[PWMCLK_CNTL]: %p\n", &clk_reg[PWMCLK_CNTL]);
+		printf("PWMCLK_DIV: %x\n", PWMCLK_DIV);
+		printf("clk_reg: %p\n", (void *) clk_reg);
+		printf("virt_to_phys(clk_reg): %x\n", mem_virt_to_phys(clk_reg));
+		for (i=0; i<CLK_LEN/4; i++) {
+			printf("%04x: 0x%08x 0x%08x\n", i, &clk_reg[i], clk_reg[i]);
+		}
+		printf("DMA_BASE: %p\n", (void *) DMA_BASE);
+		printf("dma_virt_base: %p\n", (void *) dma_virt_base);
+		printf("dma_reg: %p\n", (void *) dma_reg);
+		printf("virt_to_phys(dma_reg): %x\n", mem_virt_to_phys(dma_reg));
+		for (i=0; i<DMA_CHAN_SIZE/4; i++) {
+			printf("%04x: 0x%08x 0x%08x\n", i, &dma_reg[i], dma_reg[i]);
+		}
+#endif
+}
+
+static void
+debug_dump_samples() {
+#ifdef DEBUG
+	struct ctl *ctl = (struct ctl *)mbox.virt_addr;
+	int i;
+	for (i = 0; i < NUM_SAMPLES; i++) {
+		printf("#%d @0x%08x, \n", i, ctl->sample[i]);
+	}
+#endif
+}
+
+static void
 init_pin2gpio(void)
 {
   int i;
   for (i = 0; i < NUM_CHANNELS; i++)
-    pin2gpio[i] = 0;
+	pin2gpio[i] = 0;
 }
 
 static void
@@ -625,6 +770,7 @@ init_pwm(void){
 static void
 init_channel_pwm(void)
 {
+	dprintf("Initializing Channels...\n");
 	int i;
 	for (i = 0; i < NUM_CHANNELS; i++)
 		channel_pwm[i] = 0;
@@ -647,23 +793,29 @@ go_go_go(void)
 
 		if ((n = getline(&lineptr, &linelen, fp)) < 0)
 			continue;
-		//fprintf(stderr, "[%d]%s", n, lineptr);
-		n = sscanf(lineptr, "%d=%f%c", &servo, &value, &nl);
-		if (n !=3 || nl != '\n') {
-			//fprintf(stderr, "Bad input: %s", lineptr);
-      n = sscanf(lineptr, "release %d", &servo);
-      if (n != 1 || nl != '\n') {
-        fprintf(stderr, "Bad input: %s", lineptr);
-      } else {
-        // Release Pin from pin2gpio array if the release command is received.
-        release_pwm(servo);
-      }
-		} else if (servo < 0){ // removed servo validation against CHANNEL_NUM no longer needed since now we used real GPIO names
-			fprintf(stderr, "Invalid channel number %d\n", servo);
-		} else if (value < 0 || value > 1) {
-			fprintf(stderr, "Invalid value %f\n", value);
+		dprintf("[%d]%s", n, lineptr);
+		if (!strcmp(lineptr, "debug_regs\n")) {
+			debug_dump_hw();
+		} else if (!strcmp(lineptr, "debug_samples\n")) {
+			debug_dump_samples();
 		} else {
-			set_pwm(servo, value);
+			n = sscanf(lineptr, "%d=%f%c", &servo, &value, &nl);
+			if (n !=3 || nl != '\n') {
+				//fprintf(stderr, "Bad input: %s", lineptr);
+				n = sscanf(lineptr, "release %d", &servo);
+				if (n != 1 || nl != '\n') {
+					fprintf(stderr, "Bad input: %s", lineptr);
+				} else {
+					// Release Pin from pin2gpio array if the release command is received.
+					release_pwm(servo);
+				}
+			} else if (servo < 0){ // removed servo validation against CHANNEL_NUM no longer needed since now we used real GPIO names
+				fprintf(stderr, "Invalid channel number %d\n", servo);
+			} else if (value < 0 || value > 1) {
+				fprintf(stderr, "Invalid value %f\n", value);
+			} else {
+				set_pwm(servo, value);
+			}
 		}
 	}
 }
@@ -734,6 +886,18 @@ int
 main(int argc, char **argv)
 {
 	parseargs(argc, argv);
+	/* initialize mbox */
+	unlink(DEVFILE_MBOX);
+	if (mknod(DEVFILE_MBOX, S_IFCHR|0600, makedev(MAJOR_NUM, 0)) < 0)
+		fatal("Failed to create mailbox device\n");
+	mbox.handle = mbox_open();
+	if (mbox.handle < 0)
+		fatal("Failed to open mailbox\n");
+	unsigned mbox_board_rev = get_board_revision(mbox.handle);
+	printf("MBox Board Revision: %#x\n", mbox_board_rev);
+	get_model(mbox_board_rev);
+	unsigned mbox_dma_channels = get_dma_channels(mbox.handle);
+	printf("DMA Channels Info: %#x, using DMA Channel: %d\n", mbox_dma_channels, DMA_CHAN_NUM);
 
 	printf("Using hardware:                 %5s\n", delay_hw == DELAY_VIA_PWM ? "PWM" : "PCM");
 	printf("Number of channels:             %5d\n", NUM_CHANNELS);
@@ -741,33 +905,44 @@ main(int argc, char **argv)
 	printf("PWM steps:                      %5d\n", NUM_SAMPLES);
 	printf("Maximum period (100  %%):      %5dus\n", CYCLE_TIME_US);
 	printf("Minimum period (%1.3f%%):      %5dus\n", 100.0*SAMPLE_US / CYCLE_TIME_US, SAMPLE_US);
+	printf("DMA Base:                  %#010x\n", DMA_BASE);
 
 	setup_sighandlers();
 
-	dma_reg = map_peripheral(DMA_BASE, DMA_LEN);
+	/* map the registers for all DMA Channels */
+	dma_virt_base = map_peripheral(DMA_BASE, (DMA_CHAN_SIZE * (DMA_CHAN_MAX + 1)));
+	/* set dma_reg to point to the DMA Channel we are using */
+	dma_reg = dma_virt_base + DMA_CHAN_NUM * (DMA_CHAN_SIZE / sizeof(dma_reg));
 	pwm_reg = map_peripheral(PWM_BASE, PWM_LEN);
 	pcm_reg = map_peripheral(PCM_BASE, PCM_LEN);
 	clk_reg = map_peripheral(CLK_BASE, CLK_LEN);
 	gpio_reg = map_peripheral(GPIO_BASE, GPIO_LEN);
 
-	virtbase = mmap(NULL, NUM_PAGES * PAGE_SIZE, PROT_READ|PROT_WRITE,
-			MAP_SHARED|MAP_ANONYMOUS|MAP_NORESERVE|MAP_LOCKED,
-			-1, 0);
-	if (virtbase == MAP_FAILED)
-		fatal("pi-blaster: Failed to mmap physical pages: %m\n");
-	if ((unsigned long)virtbase & (PAGE_SIZE-1))
+	/* Use the mailbox interface to the VC to ask for physical memory */
+	mbox.mem_ref = mem_alloc(mbox.handle, NUM_PAGES * PAGE_SIZE, PAGE_SIZE, mem_flag);
+	/* TODO: How do we know that succeeded? */
+	dprintf("mem_ref %u\n", mbox.mem_ref);
+	mbox.bus_addr = mem_lock(mbox.handle, mbox.mem_ref);
+	dprintf("bus_addr = %#x\n", mbox.bus_addr);
+	mbox.virt_addr = mapmem(BUS_TO_PHYS(mbox.bus_addr), NUM_PAGES * PAGE_SIZE);
+	dprintf("virt_addr %p\n", mbox.virt_addr);
+
+	if ((unsigned long)mbox.virt_addr & (PAGE_SIZE-1))
 		fatal("pi-blaster: Virtual address is not page aligned\n");
 
-	make_pagemap();
+	/* we are done with the mbox */
+	mbox_close(mbox.handle);
+	mbox.handle = -1;
+	
+	//fatal("TempFatal\n");
 
 	init_ctrl_data();
 	init_hardware();
 	init_channel_pwm();
-  // Init pin2gpio array with 0/false values to avoid locking all of them as PWM.
+	// Init pin2gpio array with 0/false values to avoid locking all of them as PWM.
 	init_pin2gpio();
-  // Only calls update_pwm after ctrl_data calculates the pin mask to unlock all pins on start.
-  init_pwm();
-
+	// Only calls update_pwm after ctrl_data calculates the pin mask to unlock all pins on start.
+	init_pwm();
 	unlink(DEVFILE);
 	if (mkfifo(DEVFILE, 0666) < 0)
 		fatal("pi-blaster: Failed to create %s: %m\n", DEVFILE);
@@ -777,6 +952,7 @@ main(int argc, char **argv)
 	if (daemon(0,1) < 0)
 		fatal("pi-blaster: Failed to daemonize process: %m\n");
 
+	printf("Initialisation finished, pi-blaster now running as daemon, waiting for input on %s\n", DEVFILE);
 	go_go_go();
 
 	return 0;

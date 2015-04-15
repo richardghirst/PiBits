@@ -1,10 +1,11 @@
 AUTOMAKE_OPTIONS = foreign
 
+#CFLAGS = -g -DDEBUG -Wall -pedantic
 CFLAGS = -Wall -pedantic
 EXTRA_DIST = pi-blaster.service
 
 sbin_PROGRAMS = pi-blaster
-pi_blaster_SOURCES = pi-blaster.c
+pi_blaster_SOURCES = pi-blaster.c mailbox.c
 
 if HAVE_SYSTEMD
 systemdsystemunit_DATA = pi-blaster.service
