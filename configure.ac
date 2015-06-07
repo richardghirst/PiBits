@@ -23,6 +23,7 @@ if test "x$with_systemdsystemunitdir" != xno; then
  AC_SUBST([systemdsystemunitdir], [$with_systemdsystemunitdir])
 fi
 AM_CONDITIONAL(HAVE_SYSTEMD, [test -n "$with_systemdsystemunitdir" -a "x$with_systemdsystemunitdir" != xno ])
+AM_CONDITIONAL(CROSS_COMPILING, [test x"$cross_compiling" = x"yes" ])
 
 # Checks for programs.
 AC_PROG_CC

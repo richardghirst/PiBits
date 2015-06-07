@@ -13,6 +13,7 @@ else
 init_ddir = $(sysconfdir)/init.d
 init_d_SCRIPTS = pi-blaster.boot.sh
 
+if !CROSS_COMPILING
 install-data-hook:
 	update-rc.d pi-blaster.boot.sh defaults
 	$(init_ddir)/pi-blaster.boot.sh start
@@ -20,4 +21,5 @@ install-data-hook:
 uninstall-hook:
 	update-rc.d pi-blaster.boot.sh remove
 	killall pi-blaster
-endif
+endif # !CROSS_COMPILING
+endif # !HAVE_SYSTEMD
