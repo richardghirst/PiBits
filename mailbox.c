@@ -40,9 +40,9 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "mailbox.h"
 
 #ifdef DEBUG
-#define dprintf(args...) printf(args)
+#define dprintf(...) printf(__VA_ARGS__)
 #else
-#define dprintf(args...)
+#define dprintf(...) ;
 #endif
 
 #define PAGE_SIZE (4*1024)
@@ -66,7 +66,7 @@ void *mapmem(unsigned base, unsigned size)
       base);
    dprintf("base=0x%x, mem=%p\n", base, mem);
    if (mem == MAP_FAILED) {
-      printf("mmap error %d\n", (int)mem);
+      printf("mmap error %ld\n", (unsigned long int)mem);
       exit (-1);
    }
    close(mem_fd);
