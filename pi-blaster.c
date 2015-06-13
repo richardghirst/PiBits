@@ -22,6 +22,12 @@
 #define _XOPEN_SOURCE   700
 #define _BSD_SOURCE
 
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#else
+static char VERSION[] = "0.1.1";
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -38,8 +44,6 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 #include "mailbox.h"
-
-static char VERSION[] = "0.1.1";
 
 // Created new known_pins with raspberry pi list of pins
 // to compare against the param received.
