@@ -202,7 +202,7 @@ V revision (0-15)
 #ifdef DEBUG
 #define dprintf(...) printf(__VA_ARGS__)
 #else
-#define dprintf(...) ;
+#define dprintf(...)
 #endif
 
 static struct {
