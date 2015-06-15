@@ -145,6 +145,7 @@ Edgar Siva (https://github.com/edgarsilva)
 Alex Lennon (https://github.com/ajlennon)
 Lara Maia (https://github.com/LaraCraft304)
 Pattrick Hüper (https://github.com/phueper)
+Boyuan Yang (https://github.com/hosiet)
 
 ## Want to support this project?
 
