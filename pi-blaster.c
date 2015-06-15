@@ -25,7 +25,7 @@
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #else
-static char VERSION[] = "0.1.1";
+static char VERSION[] = "SNAPSHOT";
 #endif
 
 #include <stdio.h>
