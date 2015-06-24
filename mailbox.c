@@ -48,7 +48,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifdef DEBUG
 #define dprintf(...) printf(__VA_ARGS__)
 #else
-#define dprintf(...) ;
+#define dprintf(...)
 #endif
 
 #define PAGE_SIZE (4*1024)
