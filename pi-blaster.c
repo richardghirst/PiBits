@@ -18,6 +18,16 @@
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
+#define _POSIX_C_SOURCE 200809L
+#define _XOPEN_SOURCE   700
+#define _BSD_SOURCE
+
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#else
+static char VERSION[] = "SNAPSHOT";
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -34,8 +44,6 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 #include "mailbox.h"
-
-static char VERSION[] = "0.1.1";
 
 // Created new known_pins with raspberry pi list of pins
 // to compare against the param received.
@@ -192,9 +200,9 @@ V revision (0-15)
 #define BUS_TO_PHYS(x) ((x)&~0xC0000000)
 
 #ifdef DEBUG
-#define dprintf(args...) printf(args)
+#define dprintf(...) printf(__VA_ARGS__)
 #else
-#define dprintf(args...)
+#define dprintf(...)
 #endif
 
 static struct {
@@ -900,7 +908,7 @@ main(int argc, char **argv)
 	printf("DMA Channels Info: %#x, using DMA Channel: %d\n", mbox_dma_channels, DMA_CHAN_NUM);
 
 	printf("Using hardware:                 %5s\n", delay_hw == DELAY_VIA_PWM ? "PWM" : "PCM");
-	printf("Number of channels:             %5d\n", NUM_CHANNELS);
+	printf("Number of channels:             %5d\n", (int)NUM_CHANNELS);
 	printf("PWM frequency:               %5d Hz\n", 1000000/CYCLE_TIME_US);
 	printf("PWM steps:                      %5d\n", NUM_SAMPLES);
 	printf("Maximum period (100  %%):      %5dus\n", CYCLE_TIME_US);
