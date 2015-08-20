@@ -242,16 +242,16 @@ static void set_pwm(int channel, float value);
 static void update_pwm();
 
 int mbox_open() {
-   int file_desc;
+  int file_desc;
 
-   // open a char device file used for communicating with kernel mbox driver
-   file_desc = open(DEVFILE_MBOX, 0);
-   if (file_desc < 0) {
-	  printf("Can't open device file: %s\n", DEVFILE_MBOX);
-	  printf("Try creating a device file with: sudo mknod %s c %d 0\n", DEVFILE_MBOX, MAJOR_NUM);
-	  exit(-1);
-   }
-   return file_desc;
+  // open a char device file used for communicating with kernel mbox driver
+  file_desc = open(DEVFILE_MBOX, 0);
+  if (file_desc < 0) {
+    printf("Can't open device file: %s\n", DEVFILE_MBOX);
+    perror(NULL);
+    exit(-1);
+  }
+  return file_desc;
 }
 
 void mbox_close(int file_desc) {
