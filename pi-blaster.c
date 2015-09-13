@@ -251,15 +251,15 @@ int mbox_open() {
   // try to use /dev/vcio first (kernel 4.1+)
   file_desc = open(DEVFILE_VCIO, 0);
   if (file_desc < 0) {
-  	/* initialize mbox */
-	unlink(DEVFILE_MBOX);
-	if (mknod(DEVFILE_MBOX, S_IFCHR|0600, makedev(MAJOR_NUM, 0)) < 0)
-		fatal("Failed to create mailbox device\n");
-  	file_desc = open(DEVFILE_MBOX, 0);
-  	if (file_desc < 0) {
-    	printf("Can't open device file: %s\n", DEVFILE_MBOX);
-    	perror(NULL);
-    	exit(-1);
+    /* initialize mbox */
+    unlink(DEVFILE_MBOX);
+    if (mknod(DEVFILE_MBOX, S_IFCHR|0600, makedev(MAJOR_NUM, 0)) < 0)
+        fatal("Failed to create mailbox device\n");
+    file_desc = open(DEVFILE_MBOX, 0);
+    if (file_desc < 0) {
+        printf("Can't open device file: %s\n", DEVFILE_MBOX);
+        perror(NULL);
+        exit(-1);
     }
   }
   return file_desc;
