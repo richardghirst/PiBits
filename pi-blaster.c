@@ -68,6 +68,7 @@ static uint8_t pin2gpio[8];
 
 #define DEVFILE			"/dev/pi-blaster"
 #define DEVFILE_MBOX    "/dev/pi-blaster-mbox"
+#define DEVFILE_VCIO	"/dev/vcio"
 
 #define PAGE_SIZE		4096
 #define PAGE_SHIFT		12
@@ -240,16 +241,26 @@ static float channel_pwm[NUM_CHANNELS];
 
 static void set_pwm(int channel, float value);
 static void update_pwm();
+static void fatal(char *fmt, ...);
 
 int mbox_open() {
   int file_desc;
 
   // open a char device file used for communicating with kernel mbox driver
-  file_desc = open(DEVFILE_MBOX, 0);
+  
+  // try to use /dev/vcio first (kernel 4.1+)
+  file_desc = open(DEVFILE_VCIO, 0);
   if (file_desc < 0) {
-    printf("Can't open device file: %s\n", DEVFILE_MBOX);
-    perror(NULL);
-    exit(-1);
+    /* initialize mbox */
+    unlink(DEVFILE_MBOX);
+    if (mknod(DEVFILE_MBOX, S_IFCHR|0600, makedev(MAJOR_NUM, 0)) < 0)
+        fatal("Failed to create mailbox device\n");
+    file_desc = open(DEVFILE_MBOX, 0);
+    if (file_desc < 0) {
+        printf("Can't open device file: %s\n", DEVFILE_MBOX);
+        perror(NULL);
+        exit(-1);
+    }
   }
   return file_desc;
 }
@@ -894,10 +905,6 @@ int
 main(int argc, char **argv)
 {
 	parseargs(argc, argv);
-	/* initialize mbox */
-	unlink(DEVFILE_MBOX);
-	if (mknod(DEVFILE_MBOX, S_IFCHR|0600, makedev(MAJOR_NUM, 0)) < 0)
-		fatal("Failed to create mailbox device\n");
 	mbox.handle = mbox_open();
 	if (mbox.handle < 0)
 		fatal("Failed to open mailbox\n");
