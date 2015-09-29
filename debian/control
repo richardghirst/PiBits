@@ -1,0 +1,15 @@
+Source: pi-blaster
+Section: unknown
+Priority: optional
+Maintainer: Boyuan Yang <073plan@gmail.com>
+Build-Depends: debhelper (>= 9), autotools-dev
+Standards-Version: 3.9.6
+Homepage: https://github.com/sarfata/pi-blaster
+Vcs-Git: https://github.com/sarfata/pi-blaster.git
+Vcs-Browser: https://github.com/sarfata/pi-blaster
+
+Package: pi-blaster
+Architecture: armhf
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: <insert up to 60 chars description>
+ <insert long description, indented with spaces>
