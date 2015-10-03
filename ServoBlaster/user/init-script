@@ -15,7 +15,12 @@ PATH=/sbin:/usr/sbin:/bin:/usr/bin
 
 OPTS="--idle-timeout=2000"
 
-res=0
+STATUSFILE="/tmp/servoblaster-status"
+
+if [ $( id -u ) != 0 ]; then
+	echo "ERROR: Must be run as root"
+	exit 1
+fi
 
 case "$1" in
   start)
@@ -29,13 +34,31 @@ case "$1" in
 	killall servod
 	;;
   status)
-	[ -e /dev/servoblaster ] || res=4
+	if [ ! -e /dev/servoblaster ]; then
+		echo "ERROR: /dev/servoblaster does not exist"
+		exit 2
+	fi
+	rm -f $STATUSFILE
+	echo "status $STATUSFILE" > /dev/servoblaster
+	sleep 0.2
+	if [ ! -e $STATUSFILE ]; then
+		echo "ERROR: servod not responding"
+		exit 3
+	elif grep -q "^OK" $STATUSFILE; then
+		echo "OK"
+		exit 0
+	elif grep "^ERROR:" $STATUSFILE; then
+		exit 4
+	else
+		echo "ERROR: No status from servod"
+		exit 5
+	fi
 	;;
   *)
 	echo "Usage: servoblaster [start|stop|status]" >&2
-	res=3
+	exit 6
 	;;
 esac
 
-exit $res
+exit 0
 
