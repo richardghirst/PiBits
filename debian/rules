@@ -21,7 +21,7 @@ include /usr/share/dpkg/default.mk
 
 # main packaging script based on dh7 syntax
 %:
-	dh $@  --with autoreconf --with systemd
+	dh $@  --with autoreconf
 
 # dh_make generated override targets
 # This is example for Cmake (See https://bugs.debian.org/641051 )
