@@ -1,3 +1,5 @@
+autoreconf.before
+autoreconf.after
 files
 *.debhelper
 *.substvars
