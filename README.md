@@ -12,6 +12,8 @@ Pi-blaster project is based on the excellent work of Richard Hirst for ServoBlas
 
 This project is only distributed as source files. The build environment is based on Autotools to allow for compilation on the Raspberry Pi, or cross-compilation.
 
+### Build and install directly from source
+
 You may need to install 'autoconf' to build. On Raspbian and other Debian based systems this can be achieved with:
 
     sudo apt-get install autoconf
@@ -26,6 +28,34 @@ To start pi-blaster and have it relaunched automatically on every reboot:
 
     sudo make install
 
+### Build a deb package and install with dpkg
+
+You may prefer to package pi-blaster first to better integrate with Debian system.
+
+#### Raspbian 7 ("Wheezy") users
+
+This is the most common case. If you are not sure which version of Debian you are
+using, follow this instruction.
+
+    sudo apt-get install debhelper dh-autoreconf dpkg-dev autoconf
+    cd /path/to/pi-blaster/
+    dpkg-buildpackage -us -uc -i
+    sudo dpkg -i ../pi-blaster*.deb
+
+#### Raspbian 8 ("Jessie") users
+
+If you have upgraded your Raspberry Pi to use Raspbian 8 with systemd, you may
+still follow the instruction given for Wheezy users. However, an extra
+special step may help you to better integrate with systemd.
+
+    sudo apt-get install debhelper dh-autoreconf dh-systemd dpkg-dev \
+         init-system-helpers autoconf
+    cd /path/to/pi-blaster/
+    git revert 656e14c6acbb77aec95a57783726c043ee642f34
+    dpkg-buildpackage -us -uc -i
+    git reset --hard HEAD^
+    sudo dpkg -i ../pi-blaster*.deb
+
 ## How to start manually
 
 To start pi-blaster manually run:
@@ -39,6 +69,10 @@ Simply run:
     sudo make uninstall
     
 This will stop pi-blaster and prevent it from starting automatically on the next reboot.
+
+Or, if you installed from debian package, simply run:
+
+    sudo apt-get remove pi-blaster
 
 ## How to use
 
@@ -140,12 +174,12 @@ This library was developed for TBideas high power LED driver. You can read more 
 
 ## Contributors
 
-Pete Nelson (https://github.com/petiepooo)
-Edgar Siva (https://github.com/edgarsilva)
-Alex Lennon (https://github.com/ajlennon)
-Lara Maia (https://github.com/LaraCraft304)
-Pattrick Hüper (https://github.com/phueper)
-Boyuan Yang (https://github.com/hosiet)
+* Pete Nelson (https://github.com/petiepooo)
+* Edgar Siva (https://github.com/edgarsilva)
+* Alex Lennon (https://github.com/ajlennon)
+* Lara Maia (https://github.com/LaraCraft304)
+* Pattrick Hüper (https://github.com/phueper)
+* Boyuan Yang (https://github.com/hosiet)
 
 ## Want to support this project?
 
