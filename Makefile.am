@@ -7,6 +7,7 @@ EXTRA_DIST = pi-blaster.service
 sbin_PROGRAMS = pi-blaster
 pi_blaster_SOURCES = pi-blaster.c mailbox.c
 
+if !DEBIAN_PKG
 if HAVE_SYSTEMD
 systemdsystemunit_DATA = pi-blaster.service
 else
@@ -23,3 +24,4 @@ uninstall-hook:
 	killall pi-blaster
 endif # !CROSS_COMPILING
 endif # !HAVE_SYSTEMD
+endif # !DEBIAN_PKG
