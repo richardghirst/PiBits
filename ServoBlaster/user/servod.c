@@ -1107,7 +1107,6 @@ gpio2pinname(uint8_t gpio)
 		else
 			fatal("Cannot map GPIO %d to a header pin\n", gpio);
 	}
-
 	return res;
 }
 
