@@ -44,15 +44,15 @@
 #define DMA_CONBLK_AD		(0x04/4)
 #define DMA_DEBUG		(0x20/4)
 
-#define GPIO_BASE		0x20200000
+#define GPIO_BASE		0x3f200000
 #define GPIO_LEN		0xB4
-#define DMA_BASE		0x20007000
+#define DMA_BASE		0x3f007000
 #define DMA_LEN			DMA_CHAN_SIZE * (DMA_CHAN_MAX+1)
-#define PWM_BASE		0x2020C000
+#define PWM_BASE		0x3f20C000
 #define PWM_LEN			0x28
-#define CLK_BASE	        0x20101000
+#define CLK_BASE	        0x3f101000
 #define CLK_LEN			0xA8
-#define TICK_BASE		0x20003000
+#define TICK_BASE		0x3f003000
 #define TICK_LEN		0x08
 
 #define PWM_CTL			(0x00/4)
