@@ -52,16 +52,19 @@ static uint8_t known_pins[] = {
 		17,     // P1-11
 		18,     // P1-12
 		27,     // P1-13
-		21,     // P1-13
+		21,     // P1-40
 		22,     // P1-15
 		23,     // P1-16
 		24,     // P1-18
 		25,     // P1-22
+		10,     // P1-19
+		9,      // P1-21
+		11,     // P1-23
 };
 
 // pin2gpio array is not setup as empty to avoid locking all GPIO
 // inputs as PWM, they are set on the fly by the pin param passed.
-static uint8_t pin2gpio[8];
+static uint8_t pin2gpio[16];
 
 // Set num of possible PWM channels based on the known pins size.
 #define NUM_CHANNELS    (sizeof(known_pins)/sizeof(known_pins[0]))
