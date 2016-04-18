@@ -508,7 +508,7 @@ set_pin(int pin, float width)
   if (is_known_pin(pin)){
 	set_pin2gpio(pin, width);
   }else{
-	fprintf(stderr, "Not a known pin for pi-blaster\n");
+	fprintf(stderr, "Not a configured pin for pi-blaster\n");
   }
 }
 
@@ -859,6 +859,8 @@ parseargs(int argc, char **argv)
 {
 	int index;
 	int c;
+	static uint8_t temp_known_pins[MAX_CHANNELS];
+	int i=0;
 
 	static struct option longopts[] =
 	{
@@ -902,9 +904,37 @@ parseargs(int argc, char **argv)
 			break;
 
 		case 'g':
-			printf ("got gpio opt\n");
-			if (optarg)
-				printf(" with arg %s\n", optarg);
+			printf ("got gpio opt with arg %s\n", optarg);
+			if (optarg) {
+				int temp=0;
+
+				const char s[2] = ",";
+				char *token;
+   
+				/* get the first token */
+				token = strtok(optarg, s);
+
+				/* walk through other tokens */
+				while( token != NULL ) 
+				{
+					if ((temp = atoi(token))) {
+						printf( "Found gpio %d\n", temp);
+						temp_known_pins[i++] = temp;
+					} else {
+						printf( "ERROR '%s' is an invalid gpio\n", token);
+						exit(-1);
+					}
+					token = strtok(NULL, s);
+				}
+			}
+			NUM_CHANNELS = i;
+			for (i=0; i<MAX_CHANNELS; i++) {
+				if (i<NUM_CHANNELS) {
+					known_pins[i] = temp_known_pins[i];
+				} else {
+					known_pins[i] = 0;
+				}
+			}
 			break;
 
 		case 'i':
