@@ -904,7 +904,7 @@ parseargs(int argc, char **argv)
 			break;
 
 		case 'g':
-			printf ("got gpio opt with arg %s\n", optarg);
+//			printf ("got gpio opt with arg %s\n", optarg);
 			if (optarg) {
 				int temp=0;
 
@@ -918,7 +918,7 @@ parseargs(int argc, char **argv)
 				while( token != NULL ) 
 				{
 					if ((temp = atoi(token))) {
-						printf( "Found gpio %d\n", temp);
+//						printf( "Found gpio %d\n", temp);
 						temp_known_pins[i++] = temp;
 					} else {
 						printf( "ERROR '%s' is an invalid gpio\n", token);
@@ -1022,10 +1022,16 @@ main(int argc, char **argv)
 	if (chmod(DEVFILE, 0666) < 0)
 		fatal("pi-blaster: Failed to set permissions on %s: %m\n", DEVFILE);
 
-	if ((daemonize) && (daemon(0,1) < 0))
-		fatal("pi-blaster: Failed to daemonize process: %m\n");
+	printf("Initialised, ");
+	if (daemonize) {
+		if (daemon(0,1) < 0) 
+			fatal("pi-blaster: Failed to daemonize process: %m\n");
+		else
+			printf("Daemonized, ");
+	}
+	printf("Reading %s.\n", DEVFILE);
 
-	printf("Initialisation finished, pi-blaster now running as daemon, waiting for input on %s\n", DEVFILE);
+//	printf("Initialisation finished, pi-blaster now running as daemon, waiting for input on %s\n", DEVFILE);
 	go_go_go();
 
 	return 0;
