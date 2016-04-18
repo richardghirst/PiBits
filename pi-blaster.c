@@ -45,9 +45,11 @@ static char VERSION[] = "SNAPSHOT";
 #include <sys/mman.h>
 #include "mailbox.h"
 
-// Created new known_pins with raspberry pi list of pins
+#define MAX_CHANNELS	64
+
+// Create default known_pins with raspberry pi list of pins
 // to compare against the param received.
-static uint8_t known_pins[] = {
+static uint8_t known_pins[MAX_CHANNELS] = {
 		4,      // P1-7
 		17,     // P1-11
 		18,     // P1-12
@@ -62,12 +64,15 @@ static uint8_t known_pins[] = {
 		11,     // P1-23
 };
 
+// Set num of possible PWM channels based on the known pins size.
+//#define NUM_CHANNELS    (sizeof(known_pins)/sizeof(known_pins[0]))
+uint8_t NUM_CHANNELS = (sizeof(known_pins)/sizeof(known_pins[0]));
+
+
 // pin2gpio array is not setup as empty to avoid locking all GPIO
 // inputs as PWM, they are set on the fly by the pin param passed.
-static uint8_t pin2gpio[16];
-
-// Set num of possible PWM channels based on the known pins size.
-#define NUM_CHANNELS    (sizeof(known_pins)/sizeof(known_pins[0]))
+//static uint8_t pin2gpio[NUM_CHANNELS];
+static uint8_t pin2gpio[MAX_CHANNELS];
 
 #define DEVFILE			"/dev/pi-blaster"
 #define DEVFILE_MBOX    "/dev/pi-blaster-mbox"
@@ -200,7 +205,7 @@ V revision (0-15)
 #define BOARD_REVISION_TYPE_CM (6 << 4)
 #define BOARD_REVISION_REV_MASK (0xF)
 
-#define LENGTH(x)  (sizeof(x) / sizeof(x[0]))
+//#define LENGTH(x)  (sizeof(x) / sizeof(x[0]))
 
 #define BUS_TO_PHYS(x) ((x)&~0xC0000000)
 
@@ -240,8 +245,10 @@ static volatile uint32_t *gpio_reg;
 
 static int delay_hw = DELAY_VIA_PWM;
 static int invert_mode = 0;
+static int daemonize = 1;
 
-static float channel_pwm[NUM_CHANNELS];
+//static float channel_pwm[NUM_CHANNELS];
+static float channel_pwm[MAX_CHANNELS];
 
 static void set_pwm(int channel, float value);
 static void update_pwm();
@@ -414,9 +421,8 @@ map_peripheral(uint32_t base, uint32_t len)
 static int
 is_known_pin(int pin){
   int found = 0;
-
   int i;
-  for (i = 0; i < LENGTH(known_pins); i++) { //NUM_CHANNELS
+  for (i = 0; i < NUM_CHANNELS; i++) { 
 	if (known_pins[i] == pin) {
 	  found = 1;
 	  break;
@@ -454,8 +460,10 @@ set_pin2gpio(int pin, float width){
 static void
 compact_pin2gpio(){
   int i, j = 0;
-  uint8_t tmp_pin2gpio[] = { 0,0,0,0,0,0,0,0 };
-  float tmp_channel_pwm[] = { 0,0,0,0,0,0,0,0 };
+//  uint8_t tmp_pin2gpio[] = { 0,0,0,0,0,0,0,0 };
+//  float tmp_channel_pwm[] = { 0,0,0,0,0,0,0,0 };
+  uint8_t tmp_pin2gpio[MAX_CHANNELS];
+  float tmp_channel_pwm[MAX_CHANNELS];
 
   for (i = 0; i < NUM_CHANNELS; i++) {
 	if (pin2gpio[i] != 0){
@@ -464,7 +472,7 @@ compact_pin2gpio(){
 	  j++;
 	}
   }
-  for (i= 0 ;i < NUM_CHANNELS; i++){
+  for (i = 0; i < NUM_CHANNELS; i++){
 	pin2gpio[i] = tmp_pin2gpio[i];
 	channel_pwm[i] = tmp_channel_pwm[i];
   }
@@ -855,6 +863,7 @@ parseargs(int argc, char **argv)
 	static struct option longopts[] =
 	{
 		{"help", no_argument, 0, 'h'},
+		{"gpio", required_argument, 0, 'g'},
 		{"invert", no_argument, 0, 'i'},
 		{"pcm", no_argument, 0, 'p'},
 		{"version", no_argument, 0, 'v'},
@@ -865,7 +874,7 @@ parseargs(int argc, char **argv)
 	{
 
 		index = 0;
-		c = getopt_long(argc, argv, "hipv", longopts, &index);
+		c = getopt_long(argc, argv, "Dg:hipv", longopts, &index);
 
 		if (c == -1)
 			break;
@@ -878,13 +887,25 @@ parseargs(int argc, char **argv)
 
 		case 'h':
 			fprintf(stderr, "%s version %s\n", argv[0], VERSION);
-			fprintf(stderr, "Usage: %s [-hipv]\n"
+			fprintf(stderr, "Usage: %s [-hgipv]\n"
 				"-h (--help)    - this information\n"
+				"-D (--daemon)  - Don't daemonize\n"
+				"-g (--gpio)    - comma separated list of GPIOs to use\n"
 				"-i (--invert)  - invert pin output (pulse LOW)\n"
 				"-p (--pcm)     - use pcm for dmascheduling\n"
 				"-v (--version) - version information\n"
 				, argv[0]);
 			exit(-1);
+
+		case 'D':
+			daemonize = 0;
+			break;
+
+		case 'g':
+			printf ("got gpio opt\n");
+			if (optarg)
+				printf(" with arg %s\n", optarg);
+			break;
 
 		case 'i':
 			invert_mode = 1;
@@ -971,7 +992,7 @@ main(int argc, char **argv)
 	if (chmod(DEVFILE, 0666) < 0)
 		fatal("pi-blaster: Failed to set permissions on %s: %m\n", DEVFILE);
 
-	if (daemon(0,1) < 0)
+	if ((daemonize) && (daemon(0,1) < 0))
 		fatal("pi-blaster: Failed to daemonize process: %m\n");
 
 	printf("Initialisation finished, pi-blaster now running as daemon, waiting for input on %s\n", DEVFILE);
