@@ -2,7 +2,7 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ([2.69])
-AC_INIT([pi-blaster], [0.1.1])
+AC_INIT([pi-blaster], [0.1.2])
 AC_CONFIG_SRCDIR([pi-blaster.c])
 AC_CONFIG_HEADERS([config.h])
 AM_INIT_AUTOMAKE
@@ -14,6 +14,18 @@ test "$sysconfdir" = '${prefix}/etc' && sysconfdir=/etc
 test "$sharedstatedir" = '${prefix}/com' && sharedstatedir=/var
 test "$localstatedir" = '${prefix}/var' && localstatedir=/var
 
+# Checks for debian packaging.
+AC_ARG_ENABLE(
+  [debian-pkg],
+  AS_HELP_STRING([--enable-debian-pkg], [build for debian pkg, no init file installed]),
+  [
+    case "${enableval}" in
+      yes) enable_debian_pkg=yes ;;
+      no) enable_debian_pkg=no ;;
+      *) AC_MSG_ERROR([bad value ${enableval} for --enable-debian-pkg]) ;;
+    esac],
+  [enable_debian_pkg=no])
+
 # Checks for systemd.
 PKG_PROG_PKG_CONFIG
 AC_ARG_WITH([systemdsystemunitdir],
@@ -24,6 +36,7 @@ if test "x$with_systemdsystemunitdir" != xno; then
 fi
 AM_CONDITIONAL(HAVE_SYSTEMD, [test -n "$with_systemdsystemunitdir" -a "x$with_systemdsystemunitdir" != xno ])
 AM_CONDITIONAL(CROSS_COMPILING, [test x"$cross_compiling" = x"yes" ])
+AM_CONDITIONAL(DEBIAN_PKG, [test x"$enable_debian_pkg" = x"yes" ])
 
 # Checks for programs.
 AC_PROG_CC

@@ -1,0 +1,6 @@
+pi-blaster (0.1.2) unstable; urgency=low
+
+  * Initial release as deb package.
+  * Add systemd support to the deb package.
+
+ -- Boyuan Yang <073plan@gmail.com>  Tue, 29 Sep 2015 20:56:41 +0800

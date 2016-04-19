@@ -1,0 +1,6 @@
+autoreconf.before
+autoreconf.after
+files
+*.debhelper
+*.substvars
+pi-blaster.debhelper.log
