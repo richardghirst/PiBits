@@ -1,0 +1,51 @@
+.\"                                       -*- nroff -*-
+.\" manual page for pi-blaster
+.\"
+.\" (C) Copyright 2015 Boyuan Yang <073plan@gmail.com>, All rights reserved.
+.\"
+.TH "PI-BLASTER" "1" "September 29, 2015" "PI-BLASTER"
+.\"
+.\" Some roff macros, for reference:
+.\" .nh        disable hyphenation
+.\" .hy        enable hyphenation
+.\" .ad l      left justify
+.\" .ad b      justify to both left and right margins
+.\" .nf        disable filling
+.\" .fi        enable filling
+.\" .br        insert line break
+.\" .sp <n>    insert n+1 empty lines
+.\" for manpage-specific macros, see man(7)
+.SH NAME
+pi-blaster \- daemon to enable GPIO PWM output on Raspberry Pi
+.SH SYNOPSIS
+.B pi-blaster
+.SH DESCRIPTION
+This manual page documents briefly the usage of \fBpi-blaster\fR,
+the daemon that provides stable PWM output on Raspberry Pi GPIO pins.
+.PP
+\fBpi-blaster\fP should be invoked with no arguments, and the program
+will fork and work as a daemon in background, maintaining a special
+fifo (\fI/dev/pi-blaster\fR) for applications to control the PWM output
+in GPIO pins.
+.SH OPTIONS
+These programs follow the usual GNU command line syntax, with long
+options starting with two dashes (`-').
+A summary of options is included below.
+.TP
+.B \-\-pcm
+Use the BCM8235's PCM peripheral instead of its PWM peripheral to time
+the DMA transfers.
+This is useful if you are already using the chip's PWM peripheral.
+For example, for audio output.
+.TP
+.B \-\-invert
+Invert the pulse (off = pin HIGH, pulse = pin LOW).
+This can be useful for common anode LEDs or other devices that expect
+an active-low signal.
+.TP
+.B \-\-help, \-\-version
+View help or version information.
+.SH SEE ALSO
+.BR udev (7).
+
+Also see the README.md provided and placed in /usr/share/doc/pi-blaster.
