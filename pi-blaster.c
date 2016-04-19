@@ -59,9 +59,6 @@ static uint8_t known_pins[MAX_CHANNELS] = {
 		23,     // P1-16
 		24,     // P1-18
 		25,     // P1-22
-		10,     // P1-19
-		9,      // P1-21
-		11,     // P1-23
 };
 
 // Create a list of reserved GPIO pins
