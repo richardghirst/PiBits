@@ -3,14 +3,11 @@ pi-blaster
 
 This project enables PWM on the GPIO pins you request of a Raspberry Pi. The technique used is extremely efficient: does not use the CPU and gives very stable pulses.
 
-This project is based on the excellent work of Tomas Sarlandie pi-blaster: https://github.com/sarfata/pi-blaster
-and the modifications/updates made by Michael Vitousek: https://github.com/mvitousek/pi-blaster
-
 Pi-blaster project is based on the excellent work of Richard Hirst for ServoBlaster: https://github.com/richardghirst/PiBits
 
 ## How to build and install
 
-This project is only distributed as source files. The build environment is based on Autotools to allow for compilation on the Raspberry Pi, or cross-compilation.
+This project is distributed as source files. The build environment is based on Autotools to allow for compilation on the Raspberry Pi, or cross-compilation.
 
 ### Build and install directly from source
 
@@ -32,28 +29,12 @@ To start pi-blaster and have it relaunched automatically on every reboot:
 
 You may prefer to package pi-blaster first to better integrate with Debian system.
 
-#### Raspbian 7 ("Wheezy") users
-
-This is the most common case. If you are not sure which version of Debian you are
-using, follow this instruction.
-
-    sudo apt-get install debhelper dh-autoreconf dpkg-dev autoconf
-    cd /path/to/pi-blaster/
-    dpkg-buildpackage -us -uc -i
-    sudo dpkg -i ../pi-blaster*.deb
-
-#### Raspbian 8 ("Jessie") users
-
-If you have upgraded your Raspberry Pi to use Raspbian 8 with systemd, you may
-still follow the instruction given for Wheezy users. However, an extra
-special step may help you to better integrate with systemd.
+To use the Debian package, please make sure that you are running Raspbian 8 "Jessie" (`cat /etc/debian_version` to verify what version you have).
 
     sudo apt-get install debhelper dh-autoreconf dh-systemd dpkg-dev \
          init-system-helpers autoconf
     cd /path/to/pi-blaster/
-    git revert 656e14c6acbb77aec95a57783726c043ee642f34
     dpkg-buildpackage -us -uc -i
-    git reset --hard HEAD^
     sudo dpkg -i ../pi-blaster*.deb
 
 ## How to start manually
@@ -137,7 +118,7 @@ You can adjust those by changing a few defines at the top of the source code:
  * `NUM_SAMPLES`: The number of steps
  * `SAMPLE_US`: The time of one step (minimum period)
 
-If you do not neet a resolution of 1000 steps (approximately equivalent to a 10 bit DAC), then you can reduce the number of samples or increase the duration of the steps.
+If you do not need a resolution of 1000 steps (approximately equivalent to a 10 bit DAC), then you can reduce the number of samples or increase the duration of the steps.
 
 Richard Hirst who wrote the original code recommended not going below 2us for `SAMPLE_US`.
 
@@ -174,6 +155,7 @@ This library was developed for TBideas high power LED driver. You can read more 
 
 ## Contributors
 
+* Michael Vitousek (https://github.com/mvitousek/pi-blaster)
 * Pete Nelson (https://github.com/petiepooo)
 * Edgar Siva (https://github.com/edgarsilva)
 * Alex Lennon (https://github.com/ajlennon)
@@ -184,8 +166,6 @@ This library was developed for TBideas high power LED driver. You can read more 
 ## Want to support this project?
 
 The best way to contribute is to write code for the features you would like to see and to make a pull-requests.
-
-Another way is to send [DogeCoin](http://www.dogecoin.com) donations to [D7pQ9CoUepazpGbwxgiaGPCMBk8i66u4yE](dogecoin:D7pQ9CoUepazpGbwxgiaGPCMBk8i66u4yE?amount=1000&message=Pi-blaster%20donation&label=pi-blaster). Donations will be used to help promote hardware hacking. For example by giving away servos and led strips during hackathons.
 
 ## License
 
