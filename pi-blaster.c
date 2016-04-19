@@ -64,7 +64,28 @@ static uint8_t known_pins[MAX_CHANNELS] = {
 		11,     // P1-23
 };
 
+// Create a list of reserved GPIO pins
+// http://elinux.org/RPi_Low-level_peripherals
+static uint8_t banned_pins[MAX_CHANNELS] = {
+		6,      	// On Model B, it is in use for the Ethernet function
+		28,		// board ID and are connected to resistors R3 to R10 (only on Rev1.0 boards).
+		29,		// board ID and are connected to resistors R3 to R10 (only on Rev1.0 boards).
+		30,		// board ID and are connected to resistors R3 to R10 (only on Rev1.0 boards).
+		31,		// board ID and are connected to resistors R3 to R10 (only on Rev1.0 boards).
+//		40,		// used by analogue audio
+//		45,		// used by analogue audio
+		46,		// HDMI hotplug detect
+		47,		// 47 to 53 are used by the SD card interface.
+		48,		// 47 to 53 are used by the SD card interface.
+		49,		// 47 to 53 are used by the SD card interface.
+		50,		// 47 to 53 are used by the SD card interface.
+		51,		// 47 to 53 are used by the SD card interface.
+		52,		// 47 to 53 are used by the SD card interface.
+		53,		// 47 to 53 are used by the SD card interface.
+};
+
 // Set num of possible PWM channels based on the known pins size.
+
 //#define NUM_CHANNELS    (sizeof(known_pins)/sizeof(known_pins[0]))
 uint8_t NUM_CHANNELS = (sizeof(known_pins)/sizeof(known_pins[0]));
 
@@ -431,6 +452,20 @@ is_known_pin(int pin){
   return(found);
 }
 
+// Check if the pin provided is found in the list of BANNED pins.
+static int
+is_banned_pin(int pin){
+  int found = 0;
+  int i;
+  for (i = 0; i < NUM_CHANNELS; i++) {
+	if (banned_pins[i] == pin) {
+	  found = 1;
+	  break;
+	}
+  }
+  return(found);
+}
+
 // Set the pin to a pin2gpio element so pi-blaster can write to it,
 // and set the width of the PWM pulse to the element with the same index
 // in channel_pwm array.
@@ -508,7 +543,8 @@ set_pin(int pin, float width)
   if (is_known_pin(pin)){
 	set_pin2gpio(pin, width);
   }else{
-	fprintf(stderr, "Not a configured pin for pi-blaster\n");
+//	fprintf(stderr, "Not a configured pin for pi-blaster\n");
+	fprintf(stderr, "GPIO %d is not enabled for pi-blaster\n", pin);
   }
 }
 
@@ -520,7 +556,8 @@ release_pin(int pin)
   if (is_known_pin(pin)){
 	release_pin2gpio(pin);
   }else{
-	fprintf(stderr, "Not a known pin for pi-blaster\n");
+//	fprintf(stderr, "Not a known pin for pi-blaster\n");
+	fprintf(stderr, "GPIO %d is not enabled for pi-blaster\n", pin);
   }
 }
 
@@ -915,11 +952,21 @@ parseargs(int argc, char **argv)
 				token = strtok(optarg, s);
 
 				/* walk through other tokens */
+				i=0;
 				while( token != NULL ) 
 				{
 					if ((temp = atoi(token))) {
 //						printf( "Found gpio %d\n", temp);
-						temp_known_pins[i++] = temp;
+						if (i>=MAX_CHANNELS) {
+							printf( "ERROR maximum channels (%d) exceeded.\n", MAX_CHANNELS);
+							exit(-1);
+						}
+						if ((!is_banned_pin(temp)) && (temp>=0) && (temp<54) ){
+							temp_known_pins[i++] = temp;
+						} else {
+							printf( "ERROR '%s' is a banned gpio\n", token);
+							exit(-1);
+						}
 					} else {
 						printf( "ERROR '%s' is an invalid gpio\n", token);
 						exit(-1);
