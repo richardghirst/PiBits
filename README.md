@@ -13,7 +13,7 @@ Pi-blaster project is based on the excellent work of Richard Hirst for
 
 ### Debian system
 
-Thanks to [hosiet](https://github.com/hosiet), we now have a Raspbian package for
+Thanks to [Boyuan Yang](https://github.com/hosiet), we now have a Raspbian package for
 pi-blaster. You can install it with apt-get:
 
     sudo apt-get install pi-blaster
@@ -23,7 +23,7 @@ version, compile from source or make your own Debian package (see below).
 
 ### Arch Linux
 
-Thanks to [patlux](https://github.com/patlux), you can easily install pi-blaster
+Thanks to [Patrick Wozniak](https://github.com/patlux), you can easily install pi-blaster
 on archlinux with:
 
     yaourt -S pi-blaster-git
@@ -38,10 +38,13 @@ The Debian package relies on systemd which means you must have Raspbian 8 or
 later (aka "Jessie"). Run `cat /etc/debian_version`) to check what version
 you are currently running.
 
+Install the debian tools required to compile and prepare the package:
+
     sudo apt-get install debhelper dh-autoreconf dh-systemd dpkg-dev \
       init-system-helpers autoconf
 
-    cd /path/to/pi-blaster/
+And build the package:
+
     dpkg-buildpackage -us -uc -i sudo dpkg -i ../pi-blaster*.deb
 
 
@@ -50,7 +53,7 @@ you are currently running.
 The build environment is based on Autotools to allow for compilation on the
 Raspberry Pi, or cross-compilation.
 
-You may need to install 'autoconf' to build. On Raspbian and other Debian based
+You may need to install `autoconf` to build. On Raspbian and other Debian based
 systems this can be achieved with:
 
     sudo apt-get install autoconf
@@ -89,16 +92,12 @@ To set the value of a PIN, you write a command to `/dev/pi-blaster` in the form
 `<GPIOPinName>=<value>` where `<value>` must be a number between 0 and 1
 (included).
 
+You must use the GPIO number (BCM xx in the diagram below).
+
 [![List of pins thanks to pinout.xyz](pinout.xyz.png)](http://pinout.xyz)
 
-Note that you must use the GPIO number (also known as the BCM XX number on
-[pinout.xyz](http://pinout.xyz) when setting a pin.
 
-Examples: Turning PWM pins ON
-
-  * To completely turn off GPIO pin 17:
-
-    echo "17=0" > /dev/pi-blaster
+Examples:
 
   * To completely turn on GPIO pin 17:
 
@@ -108,10 +107,11 @@ Examples: Turning PWM pins ON
 
     echo "17=0.2" > /dev/pi-blaster
 
-Examples: Turning PWM pins OFF (releasing a pin so it can be used as digital
-GPIO)
+  * To turn off GPIO pin 17:
 
-  * To release previously turned ON GPIO pin 17:
+    echo "17=0" > /dev/pi-blaster
+
+  * To release a pin so it can be used as digital GPIO or an input:
 
     echo "release 17" > /dev/pi-blaster
 
