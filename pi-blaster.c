@@ -52,16 +52,19 @@ static uint8_t known_pins[] = {
 		17,     // P1-11
 		18,     // P1-12
 		27,     // P1-13
-		21,     // P1-13
+		21,     // P1-40
 		22,     // P1-15
 		23,     // P1-16
 		24,     // P1-18
 		25,     // P1-22
+		10,     // P1-19
+		9,      // P1-21
+		11,     // P1-23
 };
 
 // pin2gpio array is not setup as empty to avoid locking all GPIO
 // inputs as PWM, they are set on the fly by the pin param passed.
-static uint8_t pin2gpio[8];
+static uint8_t pin2gpio[16];
 
 // Set num of possible PWM channels based on the known pins size.
 #define NUM_CHANNELS    (sizeof(known_pins)/sizeof(known_pins[0]))
@@ -193,6 +196,7 @@ V revision (0-15)
 #define BOARD_REVISION_TYPE_PI1_B_PLUS (3 << 4)
 #define BOARD_REVISION_TYPE_PI2_B (4 << 4)
 #define BOARD_REVISION_TYPE_ALPHA (5 << 4)
+#define BOARD_REVISION_TYPE_PI3_B (8 << 4)
 #define BOARD_REVISION_TYPE_CM (6 << 4)
 #define BOARD_REVISION_REV_MASK (0xF)
 
@@ -353,6 +357,8 @@ get_model(unsigned mbox_board_rev)
 	if ((mbox_board_rev & BOARD_REVISION_SCHEME_MASK) == BOARD_REVISION_SCHEME_NEW) {
 		if ((mbox_board_rev & BOARD_REVISION_TYPE_MASK) == BOARD_REVISION_TYPE_PI2_B) {
 			board_model = 2;
+		} else if ((mbox_board_rev & BOARD_REVISION_TYPE_MASK) == BOARD_REVISION_TYPE_PI3_B) {
+			board_model = 3;
 		} else {
 			// no Pi 2, we assume a Pi 1
 			board_model = 1;
@@ -369,6 +375,7 @@ get_model(unsigned mbox_board_rev)
 			mem_flag         = MEM_FLAG_L1_NONALLOCATING | MEM_FLAG_ZERO;
 			break;
 		case 2:
+		case 3:
 			periph_virt_base = 0x3f000000;
 			periph_phys_base = 0x7e000000;
 			mem_flag         = MEM_FLAG_L1_NONALLOCATING | MEM_FLAG_ZERO; 
