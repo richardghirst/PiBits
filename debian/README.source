@@ -1,0 +1,8 @@
+pi-blaster for Debian
+---------------------
+
+The source only give files for autotools. Any user must install
+automake and autotools as well.
+
+ -- Boyuan Yang <073plan@gmail.com>  Tue, 29 Sep 2015 20:56:41 +0800
+

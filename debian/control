@@ -1,0 +1,18 @@
+Source: pi-blaster
+Section: electronics
+Priority: optional
+Maintainer: Boyuan Yang <073plan@gmail.com>
+Build-Depends: debhelper (>= 9), dh-autoreconf, dh-systemd (>= 1.5)
+Standards-Version: 3.9.6
+Homepage: https://github.com/sarfata/pi-blaster
+Vcs-Git: https://github.com/sarfata/pi-blaster.git
+Vcs-Browser: https://github.com/sarfata/pi-blaster
+
+Package: pi-blaster
+Architecture: armhf armel
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: Daemon for PWM control of the Raspberry Pi GPIO pins
+ This tool will turn the given GPIO pins into outputs and
+ let the application control the value on the pin by writing
+ commands into /dev/pi-blaster, such as "0=0.3" to set the first pin
+ to 30% PWM.

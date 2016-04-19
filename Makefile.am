@@ -7,12 +7,26 @@ EXTRA_DIST = pi-blaster.service
 sbin_PROGRAMS = pi-blaster
 pi_blaster_SOURCES = pi-blaster.c mailbox.c
 
+if !DEBIAN_PKG
 if HAVE_SYSTEMD
 systemdsystemunit_DATA = pi-blaster.service
+
+# Unless we are cross-compiling, start now.
+if !CROSS_COMPILING
+install-data-hook:
+	systemctl enable pi-blaster
+	systemctl start pi-blaster
+
+uninstall-hook:
+	systemctl stop pi-blaster
+	systemctl disable pi-blaster
+endif # !CROSS_COMPILING
+
 else
 init_ddir = $(sysconfdir)/init.d
 init_d_SCRIPTS = pi-blaster.boot.sh
 
+# Unless we are cross-compiling, start now.
 if !CROSS_COMPILING
 install-data-hook:
 	update-rc.d pi-blaster.boot.sh defaults
@@ -22,4 +36,6 @@ uninstall-hook:
 	update-rc.d pi-blaster.boot.sh remove
 	killall pi-blaster
 endif # !CROSS_COMPILING
+
 endif # !HAVE_SYSTEMD
+endif # !DEBIAN_PKG
