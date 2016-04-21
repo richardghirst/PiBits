@@ -649,6 +649,8 @@ setup_sighandlers(void)
 		sa.sa_handler = terminate;
 		sigaction(i, &sa, NULL);
 	}
+        signal(SIGWINCH, SIG_IGN);
+
 }
 
 static void
