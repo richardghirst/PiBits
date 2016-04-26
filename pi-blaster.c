@@ -925,10 +925,11 @@ parseargs(int argc, char **argv)
 
 		case 'h':
 			fprintf(stderr, "%s version %s\n", argv[0], VERSION);
-			fprintf(stderr, "Usage: %s [-hgipv]\n"
+			fprintf(stderr, "Usage: %s [-hDgipv]\n"
 				"-h (--help)    - this information\n"
 				"-D (--daemon)  - Don't daemonize\n"
 				"-g (--gpio)    - comma separated list of GPIOs to use\n"
+				"                 If omitted, default is \"4,17,18,27,21,22,23,24,25\"\n"
 				"-i (--invert)  - invert pin output (pulse LOW)\n"
 				"-p (--pcm)     - use pcm for dmascheduling\n"
 				"-v (--version) - version information\n"

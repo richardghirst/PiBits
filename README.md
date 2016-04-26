@@ -154,7 +154,8 @@ Richard Hirst who wrote the original code recommended not going below 2us for
 ## Options
 
 To override the default list of supported GPIO pins and specify fewer (or more)
-you can specify a comma separated list of GPIO numbers:
+you can specify a comma separated list of GPIO numbers. This is also the default
+list:
 
     --gpio 4,17,18,27,21,22,23,24,25
 
