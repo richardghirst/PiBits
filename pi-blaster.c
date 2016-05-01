@@ -45,6 +45,8 @@ static char VERSION[] = "SNAPSHOT";
 #include <sys/mman.h>
 #include "mailbox.h"
 
+// MAX_CHANNELS is both the highest gpio we can address
+// and the maximum number of channels
 #define MAX_CHANNELS	32
 
 // Create default known_pins with raspberry pi list of pins
@@ -88,7 +90,6 @@ uint8_t num_channels = (sizeof(known_pins)/sizeof(known_pins[0]));
 
 // pin2gpio array is not setup as empty to avoid locking all GPIO
 // inputs as PWM, they are set on the fly by the pin param passed.
-//static uint8_t pin2gpio[num_channels];
 static uint8_t pin2gpio[MAX_CHANNELS];
 
 #define DEVFILE			"/dev/pi-blaster"
