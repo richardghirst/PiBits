@@ -45,7 +45,7 @@ static char VERSION[] = "SNAPSHOT";
 #include <sys/mman.h>
 #include "mailbox.h"
 
-#define MAX_CHANNELS	64
+#define MAX_CHANNELS	32
 
 // Create default known_pins with raspberry pi list of pins
 // to compare against the param received.
@@ -83,13 +83,12 @@ static uint8_t banned_pins[MAX_CHANNELS] = {
 
 // Set num of possible PWM channels based on the known pins size.
 
-//#define NUM_CHANNELS    (sizeof(known_pins)/sizeof(known_pins[0]))
-uint8_t NUM_CHANNELS = (sizeof(known_pins)/sizeof(known_pins[0]));
+uint8_t num_channels = (sizeof(known_pins)/sizeof(known_pins[0]));
 
 
 // pin2gpio array is not setup as empty to avoid locking all GPIO
 // inputs as PWM, they are set on the fly by the pin param passed.
-//static uint8_t pin2gpio[NUM_CHANNELS];
+//static uint8_t pin2gpio[num_channels];
 static uint8_t pin2gpio[MAX_CHANNELS];
 
 #define DEVFILE			"/dev/pi-blaster"
@@ -223,7 +222,6 @@ V revision (0-15)
 #define BOARD_REVISION_TYPE_CM (6 << 4)
 #define BOARD_REVISION_REV_MASK (0xF)
 
-//#define LENGTH(x)  (sizeof(x) / sizeof(x[0]))
 
 #define BUS_TO_PHYS(x) ((x)&~0xC0000000)
 
@@ -265,7 +263,6 @@ static int delay_hw = DELAY_VIA_PWM;
 static int invert_mode = 0;
 static int daemonize = 1;
 
-//static float channel_pwm[NUM_CHANNELS];
 static float channel_pwm[MAX_CHANNELS];
 
 static void set_pwm(int channel, float value);
@@ -332,7 +329,7 @@ terminate(int dummy)
 
 	dprintf("Resetting DMA...\n");
 	if (dma_reg && mbox.virt_addr) {
-		for (i = 0; i < NUM_CHANNELS; i++)
+		for (i = 0; i < num_channels; i++)
 			channel_pwm[i] = 0;
 		update_pwm();
 		udelay(CYCLE_TIME_US);
@@ -440,7 +437,7 @@ static int
 is_known_pin(int pin){
   int found = 0;
   int i;
-  for (i = 0; i < NUM_CHANNELS; i++) { 
+  for (i = 0; i < num_channels; i++) { 
 	if (known_pins[i] == pin) {
 	  found = 1;
 	  break;
@@ -454,7 +451,7 @@ static int
 is_banned_pin(int pin){
   int found = 0;
   int i;
-  for (i = 0; i < NUM_CHANNELS; i++) {
+  for (i = 0; i < num_channels; i++) {
 	if (banned_pins[i] == pin) {
 	  found = 1;
 	  break;
@@ -471,7 +468,7 @@ set_pin2gpio(int pin, float width){
   int established = 0;
 
   int i;
-  for (i = 0; i < NUM_CHANNELS; i++) {
+  for (i = 0; i < num_channels; i++) {
 	if (pin2gpio[i] == pin || pin2gpio[i] == 0) {
 	  if (pin2gpio[i] == 0) {
 		gpio_set(pin, invert_mode);
@@ -492,19 +489,17 @@ set_pin2gpio(int pin, float width){
 static void
 compact_pin2gpio(){
   int i, j = 0;
-//  uint8_t tmp_pin2gpio[] = { 0,0,0,0,0,0,0,0 };
-//  float tmp_channel_pwm[] = { 0,0,0,0,0,0,0,0 };
   uint8_t tmp_pin2gpio[MAX_CHANNELS];
   float tmp_channel_pwm[MAX_CHANNELS];
 
-  for (i = 0; i < NUM_CHANNELS; i++) {
+  for (i = 0; i < num_channels; i++) {
 	if (pin2gpio[i] != 0){
 	  tmp_pin2gpio[j] = pin2gpio[i];
 	  tmp_channel_pwm[j] = channel_pwm[i];
 	  j++;
 	}
   }
-  for (i = 0; i < NUM_CHANNELS; i++){
+  for (i = 0; i < num_channels; i++){
 	pin2gpio[i] = tmp_pin2gpio[i];
 	channel_pwm[i] = tmp_channel_pwm[i];
   }
@@ -519,7 +514,7 @@ release_pin2gpio(int pin)
   int released = 0;
 
   int i;
-  for (i = 0; i < NUM_CHANNELS; i++) {
+  for (i = 0; i < num_channels; i++) {
 	if (pin2gpio[i] == pin) {
 	  channel_pwm[i] = 0;
 	  pin2gpio[i] = 0;
@@ -540,7 +535,6 @@ set_pin(int pin, float width)
   if (is_known_pin(pin)){
 	set_pin2gpio(pin, width);
   }else{
-//	fprintf(stderr, "Not a configured pin for pi-blaster\n");
 	fprintf(stderr, "GPIO %d is not enabled for pi-blaster\n", pin);
   }
 }
@@ -553,7 +547,6 @@ release_pin(int pin)
   if (is_known_pin(pin)){
 	release_pin2gpio(pin);
   }else{
-//	fprintf(stderr, "Not a known pin for pi-blaster\n");
 	fprintf(stderr, "GPIO %d is not enabled for pi-blaster\n", pin);
   }
 }
@@ -610,7 +603,7 @@ update_pwm()
 
 	/*   Now create a mask of all the pins that should be on */
 	mask = 0;
-	for (i = 0; i < NUM_CHANNELS; i++) {
+	for (i = 0; i < num_channels; i++) {
 	// Check the pin2gpio pin has been set to avoid locking all of them as PWM.
 		if (channel_pwm[i] > 0 && pin2gpio[i]) {
 			mask |= 1 << pin2gpio[i];
@@ -626,7 +619,7 @@ update_pwm()
 		else
 			ctl->cb[j*2].dst = phys_gpclr0;
 		mask = 0;
-		for (i = 0; i < NUM_CHANNELS; i++) {
+		for (i = 0; i < num_channels; i++) {
 			// Check the pin2gpio pin has been set to avoid locking all of them as PWM.
 			if ((float)j/NUM_SAMPLES > channel_pwm[i] && pin2gpio[i])
 				mask |= 1 << pin2gpio[i];
@@ -673,7 +666,7 @@ init_ctrl_data(void)
 
 	// Calculate a mask to turn off all the servos
 	mask = 0;
-	for (i = 0; i < NUM_CHANNELS; i++){
+	for (i = 0; i < num_channels; i++){
 		mask |= 1 << known_pins[i];
 	}
 	for (i = 0; i < NUM_SAMPLES; i++)
@@ -828,7 +821,7 @@ static void
 init_pin2gpio(void)
 {
   int i;
-  for (i = 0; i < NUM_CHANNELS; i++)
+  for (i = 0; i < num_channels; i++)
 	pin2gpio[i] = 0;
 }
 
@@ -842,7 +835,7 @@ init_channel_pwm(void)
 {
 	dprintf("Initializing Channels...\n");
 	int i;
-	for (i = 0; i < NUM_CHANNELS; i++)
+	for (i = 0; i < num_channels; i++)
 		channel_pwm[i] = 0;
 }
 
@@ -941,7 +934,6 @@ parseargs(int argc, char **argv)
 			break;
 
 		case 'g':
-//			printf ("got gpio opt with arg %s\n", optarg);
 			if (optarg) {
 				int temp=0;
 
@@ -955,13 +947,12 @@ parseargs(int argc, char **argv)
 				i=0;
 				while( token != NULL ) 
 				{
-					if ((temp = atoi(token))) {
-//						printf( "Found gpio %d\n", temp);
+					if ( (temp = atoi(token)) && (temp>=0) && (temp < MAX_CHANNELS) ){
 						if (i>=MAX_CHANNELS) {
-							printf( "ERROR maximum channels (%d) exceeded.\n", MAX_CHANNELS);
+							printf( "ERROR maximum number of channels (%d) exceeded.\n", MAX_CHANNELS);
 							exit(-1);
 						}
-						if ((!is_banned_pin(temp)) && (temp>=0) && (temp<54) ){
+						if (!is_banned_pin(temp)) {
 							temp_known_pins[i++] = temp;
 						} else {
 							printf( "ERROR '%s' is a banned gpio\n", token);
@@ -974,9 +965,9 @@ parseargs(int argc, char **argv)
 					token = strtok(NULL, s);
 				}
 			}
-			NUM_CHANNELS = i;
+			num_channels = i;
 			for (i=0; i<MAX_CHANNELS; i++) {
-				if (i<NUM_CHANNELS) {
+				if (i<num_channels) {
 					known_pins[i] = temp_known_pins[i];
 				} else {
 					known_pins[i] = 0;
@@ -1020,7 +1011,7 @@ main(int argc, char **argv)
 	printf("DMA Channels Info: %#x, using DMA Channel: %d\n", mbox_dma_channels, DMA_CHAN_NUM);
 
 	printf("Using hardware:                 %5s\n", delay_hw == DELAY_VIA_PWM ? "PWM" : "PCM");
-	printf("Number of channels:             %5d\n", (int)NUM_CHANNELS);
+	printf("Number of channels:             %5d\n", (int)num_channels);
 	printf("PWM frequency:               %5d Hz\n", 1000000/CYCLE_TIME_US);
 	printf("PWM steps:                      %5d\n", NUM_SAMPLES);
 	printf("Maximum period (100  %%):      %5dus\n", CYCLE_TIME_US);
@@ -1078,7 +1069,6 @@ main(int argc, char **argv)
 	}
 	printf("Reading %s.\n", DEVFILE);
 
-//	printf("Initialisation finished, pi-blaster now running as daemon, waiting for input on %s\n", DEVFILE);
 	go_go_go();
 
 	return 0;
