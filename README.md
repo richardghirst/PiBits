@@ -153,6 +153,12 @@ Richard Hirst who wrote the original code recommended not going below 2us for
 
 ## Options
 
+To override the default list of supported GPIO pins and specify fewer (or more)
+you can specify a comma separated list of GPIO numbers. This is also the default
+list:
+
+    --gpio 4,17,18,27,21,22,23,24,25
+
 To use the BCM2835's PCM peripheral instead of its PWM peripheral to time the
 DMA transfers, pass the option:
 
@@ -167,6 +173,10 @@ To invert the pulse (off = pin HIGH, pulse = pin LOW), use:
 
 This can be useful for common anode LEDs or other devices that expect an
 active-low signal.
+
+To keep pi-blaster running in the foreground without running as a daemon use:
+
+    -D
 
 To view help or version information, use:
 
@@ -201,6 +211,7 @@ about this project on [our blog][blog].
 * Lara Maia (https://github.com/LaraCraft304)
 * Pattrick Hüper (https://github.com/phueper)
 * Boyuan Yang (https://github.com/hosiet)
+* penfold42 (https://github.com/penfold42)
 
 ## Want to support this project?
 
