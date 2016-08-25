@@ -2,7 +2,7 @@
 Description=Daemon for PWM control of the Raspberry Pi GPIO pins
 
 [Service]
-EnvironmentFile=/etc/default/pi-blaster
+EnvironmentFile=-/etc/default/pi-blaster
 User=root
 ExecStart=/usr/sbin/pi-blaster $DAEMON_OPTS
 ExecReload=/bin/kill -s HUP $MAINPID
