@@ -573,6 +573,7 @@ set_pwm(int channel, float width)
 static void
 set_all_pwm(float width)
 {
+    int i;
     for (i = 0; i < num_channels; i++) {
         if (is_known_pin(i)){
             set_pwm(i, width);
