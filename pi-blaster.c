@@ -569,6 +569,17 @@ set_pwm(int channel, float width)
   update_pwm();
 }
 
+// Run set_pwm on every known pin, setting all of them to the provided width.
+static void
+set_all_pwm(float width)
+{
+    for (i = 0; i < num_channels; i++) {
+        if (is_known_pin(i)){
+            set_pwm(i, width);
+        }
+    }
+}
+
 /*
  * What we need to do here is:
  *   First DMA command turns on the pins that are >0
@@ -868,7 +879,12 @@ go_go_go(void)
 				//fprintf(stderr, "Bad input: %s", lineptr);
 				n = sscanf(lineptr, "release %d", &servo);
 				if (n != 1 || nl != '\n') {
-					fprintf(stderr, "Bad input: %s", lineptr);
+                    n = sscanf(lineptr, "*=%f", &value);
+                    if (n != 1 || nl != '\n') {
+                        fprintf(stderr, "Bad input: %s", lineptr);
+                    } else {
+                        set_all_pwm(value);
+                    }
 				} else {
 					// Release Pin from pin2gpio array if the release command is received.
 					release_pwm(servo);
