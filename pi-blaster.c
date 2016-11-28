@@ -573,12 +573,12 @@ set_pwm(int channel, float width)
 static void
 set_all_pwm(float width)
 {
-    int i;
-    for (i = 0; i < num_channels; i++) {
-        if (is_known_pin(i)){
-            set_pwm(i, width);
-        }
-    }
+	int i;
+	for (i = 0; i < num_channels; i++) {
+		if (is_known_pin(i)){
+			set_pwm(i, width);
+		}
+	}
 }
 
 /*
@@ -880,12 +880,12 @@ go_go_go(void)
 				//fprintf(stderr, "Bad input: %s", lineptr);
 				n = sscanf(lineptr, "release %d", &servo);
 				if (n != 1 || nl != '\n') {
-                    n = sscanf(lineptr, "*=%f", &value);
-                    if (n != 1 || nl != '\n') {
-                        fprintf(stderr, "Bad input: %s", lineptr);
-                    } else {
-                        set_all_pwm(value);
-                    }
+					n = sscanf(lineptr, "*=%f", &value);
+					if (n != 1 || nl != '\n') {
+						fprintf(stderr, "Bad input: %s", lineptr);
+					} else {
+						set_all_pwm(value);
+					}
 				} else {
 					// Release Pin from pin2gpio array if the release command is received.
 					release_pwm(servo);
