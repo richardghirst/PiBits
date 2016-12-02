@@ -866,16 +866,19 @@ go_go_go(void)
 	for (;;) {
 		int n, servo;
 		float value;
-        
+
 		if ((n = getline(&lineptr, &linelen, fp)) < 0)
 			continue;
 		dprintf("[%d]%s", n, lineptr);
 		if (strcmp(lineptr, "debug_regs\n")) {
+			fprintf(stderr, "debug_dump_hw", lineptr);
 			debug_dump_hw();
 		} else if (strcmp(lineptr, "debug_samples\n")) {
+			fprintf(stderr, "debug_dump_samples", lineptr);
 			debug_dump_samples();
 		} else if (sscanf(lineptr, "release %d%c", &servo, &nl) == 2 && nl == '\n') {
-			release_pwm(servo);
+			fprintf(stderr, "debug_dump_samples", lineptr);
+			//release_pwm(servo);
 		} else if (sscanf(lineptr, "*=%f%c", &value, &nl) == 2 && nl == '\n') {
 			if (value < 0 || value > 1) {
 				fprintf(stderr, "Invalid value %f\n", value);
