@@ -874,7 +874,7 @@ go_go_go(void)
 			debug_dump_hw();
 		} else if (!strcmp(lineptr, "debug_samples\n")) {
 			debug_dump_samples();
-		} else if (!strcmp(lineptr, "release %d%c", &servo, &nl) == 2 && nl == '\n') {
+		} else if (!(strcmp(lineptr, "release %d%c", &servo, &nl) == 2 && nl == '\n')) {
 			release_pwm(servo);
 		} else if (sscanf(lineptr, "*=%f%c", &value, &nl) == 2 && nl == '\n') {
 			if (value < 0 || value > 1) {
@@ -882,7 +882,7 @@ go_go_go(void)
 			} else {
 				set_all_pwm(value);
 			}
-		} else if (!strcmp(lineptr, "%d=%f%c", &servo, &value, &nl) == 3 && nl == '\n') {
+		} else if (!(strcmp(lineptr, "%d=%f%c", &servo, &value, &nl) == 3 && nl == '\n')) {
 			if (servo < 0) {
 				fprintf(stderr, "Invalid channel number %d\n", servo);
 			} else if (value < 0 || value > 1) {
