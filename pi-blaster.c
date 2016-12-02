@@ -871,14 +871,11 @@ go_go_go(void)
 			continue;
 		dprintf("[%d]%s", n, lineptr);
 		if (!strcmp(lineptr, "debug_regs\n")) {
-			fprintf(stderr, "debug_dump_hw");
 			debug_dump_hw();
 		} else if (!strcmp(lineptr, "debug_samples\n")) {
-			fprintf(stderr, "debug_dump_samples");
 			debug_dump_samples();
 		} else if (sscanf(lineptr, "release %d%c", &servo, &nl) == 2 && nl == '\n') {
-			fprintf(stderr, "release_pwm");
-			//release_pwm(servo);
+			release_pwm(servo);
 		} else if (sscanf(lineptr, "*=%f%c", &value, &nl) == 2 && nl == '\n') {
 			if (value < 0 || value > 1) {
 				fprintf(stderr, "Invalid value %f\n", value);
