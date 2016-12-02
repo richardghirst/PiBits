@@ -866,18 +866,18 @@ go_go_go(void)
 	for (;;) {
 		int n, servo;
 		float value;
-
+        
 		if ((n = getline(&lineptr, &linelen, fp)) < 0)
 			continue;
 		dprintf("[%d]%s", n, lineptr);
 		if (!strcmp(lineptr, "debug_regs\n")) {
-            debug_dump_hw();
+			debug_dump_hw();
 		} else if (!strcmp(lineptr, "debug_samples\n")) {
 			debug_dump_samples();
 		} else if (!strcmp(lineptr, "release %d%c", &servo, &nl) == 2 && nl == '\n') {
 			release_pwm(servo);
 		} else if (sscanf(lineptr, "*=%f%c", &value, &nl) == 2 && nl == '\n') {
-            if (value < 0 || value > 1) {
+			if (value < 0 || value > 1) {
 				fprintf(stderr, "Invalid value %f\n", value);
 			} else {
 				set_all_pwm(value);
