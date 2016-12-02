@@ -882,7 +882,7 @@ go_go_go(void)
 			} else {
 				set_all_pwm(value);
 			}
-		} else if (!sscanf(lineptr, "%d=%f%c", &servo, &value, &nl) == 3 && nl == '\n') {
+		} else if (sscanf(lineptr, "%d=%f%c", &servo, &value, &nl) == 3 && nl == '\n') {
 			if (servo < 0) {
 				fprintf(stderr, "Invalid channel number %d\n", servo);
 			} else if (value < 0 || value > 1) {
