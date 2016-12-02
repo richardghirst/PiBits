@@ -870,11 +870,11 @@ go_go_go(void)
 		if ((n = getline(&lineptr, &linelen, fp)) < 0)
 			continue;
 		dprintf("[%d]%s", n, lineptr);
-		if (!strcmp(lineptr, "debug_regs\n")) {
+		if (strcmp(lineptr, "debug_regs\n")) {
 			debug_dump_hw();
-		} else if (!strcmp(lineptr, "debug_samples\n")) {
+		} else if (strcmp(lineptr, "debug_samples\n")) {
 			debug_dump_samples();
-		} else if (!sscanf(lineptr, "release %d%c", &servo, &nl) == 2 && nl == '\n') {
+		} else if (sscanf(lineptr, "release %d%c", &servo, &nl) == 2 && nl == '\n') {
 			release_pwm(servo);
 		} else if (sscanf(lineptr, "*=%f%c", &value, &nl) == 2 && nl == '\n') {
 			if (value < 0 || value > 1) {
