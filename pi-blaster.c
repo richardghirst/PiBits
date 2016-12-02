@@ -573,12 +573,12 @@ set_pwm(int channel, float width)
 static void
 set_all_pwm(float width)
 {
-	int i;
-	for (i = 0; i < num_channels; i++) {
-		if (is_known_pin(i)){
-			set_pwm(i, width);
-		}
-	}
+    int i;
+    for (i = 0; i < num_channels; i++) {
+        if (is_known_pin(i)){
+            set_pwm(i, width);
+        }
+    }
 }
 
 /*
@@ -871,32 +871,28 @@ go_go_go(void)
 			continue;
 		dprintf("[%d]%s", n, lineptr);
 		if (!strcmp(lineptr, "debug_regs\n")) {
-			debug_dump_hw();
+            debug_dump_hw();
 		} else if (!strcmp(lineptr, "debug_samples\n")) {
 			debug_dump_samples();
-		} else {
-			n = sscanf(lineptr, "%d=%f%c", &servo, &value, &nl);
-			if (n !=3 || nl != '\n') {
-				//fprintf(stderr, "Bad input: %s", lineptr);
-				n = sscanf(lineptr, "release %d", &servo);
-				if (n != 1 || nl != '\n') {
-					n = sscanf(lineptr, "*=%f", &value);
-					if (n != 1 || nl != '\n') {
-						fprintf(stderr, "Bad input: %s", lineptr);
-					} else {
-						set_all_pwm(value);
-					}
-				} else {
-					// Release Pin from pin2gpio array if the release command is received.
-					release_pwm(servo);
-				}
-			} else if (servo < 0){ // removed servo validation against CHANNEL_NUM no longer needed since now we used real GPIO names
+		} else if (!strcmp(lineptr, "release %d%c", &servo, &nl) == 2 && nl == '\n') {
+			release_pwm(servo);
+		} else if (sscanf(lineptr, "*=%f%c", &value, &nl) == 2 && nl == '\n') {
+            if (value < 0 || value > 1) {
+				fprintf(stderr, "Invalid value %f\n", value);
+			} else {
+				set_all_pwm(value);
+			}
+		} else if (!strcmp(lineptr, "%d=%f%c", &servo, &value, &nl) == 3 && nl == '\n') {
+			if (servo < 0) {
 				fprintf(stderr, "Invalid channel number %d\n", servo);
 			} else if (value < 0 || value > 1) {
 				fprintf(stderr, "Invalid value %f\n", value);
 			} else {
 				set_pwm(servo, value);
 			}
+		}
+		else {
+			fprintf(stderr, "Bad input: %s", lineptr);
 		}
 	}
 }
