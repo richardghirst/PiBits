@@ -45,7 +45,7 @@ Install the debian tools required to compile and prepare the package:
 
 And build the package:
 
-    dpkg-buildpackage -us -uc -i sudo dpkg -i ../pi-blaster*.deb
+    dpkg-buildpackage -us -uc -i && sudo dpkg -i ../pi-blaster*.deb
 
 
 ### Build and install directly from source
