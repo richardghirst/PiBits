@@ -212,6 +212,7 @@ about this project on [our blog][blog].
 * Pattrick Hüper (https://github.com/phueper)
 * Boyuan Yang (https://github.com/hosiet)
 * penfold42 (https://github.com/penfold42)
+* Thomas McVay (https://github.com/ThomasMcVay)
 
 ## Want to support this project?
 
