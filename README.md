@@ -11,16 +11,6 @@ Pi-blaster project is based on the excellent work of Richard Hirst for
 
 ## How to install
 
-### Debian system
-
-Thanks to [Boyuan Yang](https://github.com/hosiet), we now have a Raspbian package for
-pi-blaster. You can install it with apt-get:
-
-    sudo apt-get install pi-blaster
-
-Note that the Debian package might be slightly out of date. For the most recent
-version, compile from source or make your own Debian package (see below).
-
 ### Arch Linux
 
 Thanks to [Patrick Wozniak](https://github.com/patlux), you can easily install pi-blaster
