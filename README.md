@@ -203,6 +203,7 @@ about this project on [our blog][blog].
 * Boyuan Yang (https://github.com/hosiet)
 * penfold42 (https://github.com/penfold42)
 * Thomas McVay (https://github.com/ThomasMcVay)
+* Pavle Petrovic (https://github.com/pavlecc)
 
 ## Want to support this project?
 
