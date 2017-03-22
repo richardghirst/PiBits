@@ -955,7 +955,7 @@ get_model_and_revision(void)
 	if (revstr[0] == '\0')
 		fatal("servod: No 'Revision' record in /proc/cpuinfo\n");
 
-	if (strstr(modelstr, "BCM2708"))
+	if (strstr(modelstr, "BCM2708") || strstr(modelstr, "BCM2835"))
 		board_model = 1;
 	else if (strstr(modelstr, "BCM2709"))
 		board_model = 2;
