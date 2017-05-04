@@ -883,20 +883,23 @@ go_go_go(void)
 		int charcnt = 0;
 		int argcnt = 0;
 		float value;
+		char *charptr = NULL;
 
 		if ((n = getline(&lineptr, &linelen, fp)) < 0)
 			continue;
 		dprintf("[%d]%s", n, lineptr);
-		if (!strcmp(lineptr, "debug_regs\n")) {
+
+		charptr = lineptr;
+		if (!strcmp(charptr, "debug_regs\n")) {
 			debug_dump_hw();
 			bad_input = 0;
-		} else if (!strcmp(lineptr, "debug_samples\n")) {
+		} else if (!strcmp(charptr, "debug_samples\n")) {
 			debug_dump_samples();
 			bad_input = 0;
-		} else if (sscanf(lineptr, "release %d%c", &servo, &nl) == 2 && nl == '\n') {
+		} else if (sscanf(charptr, "release %d%c", &servo, &nl) == 2 && nl == '\n') {
 			release_pwm(servo);
 			bad_input = 0;
-		} else if (sscanf(lineptr, "*=%f%c", &value, &nl) == 2 && nl == '\n') {
+		} else if (sscanf(charptr, "*=%f%c", &value, &nl) == 2 && nl == '\n') {
 			if (value < 0 || value > 1) {
 				fprintf(stderr, "Invalid value %f\n", value);
 			} else {
@@ -904,7 +907,7 @@ go_go_go(void)
 			}
 			bad_input = 0;
 		} else do {
-			argcnt = sscanf(lineptr, "%d=%f%c%n", &servo, &value, &nl, &charcnt);
+			argcnt = sscanf(charptr, "%d=%f%c%n", &servo, &value, &nl, &charcnt);
 			if (argcnt == 3)
 			{
 				if (servo < 0) {
@@ -917,7 +920,7 @@ go_go_go(void)
 				if (nl == '\n') {
 					update_pwm();
 				} else {
-					lineptr += charcnt;
+					charptr += charcnt;
 				}
 			}
 			bad_input = argcnt < 3;
@@ -925,6 +928,13 @@ go_go_go(void)
 
 		if (bad_input) {
 			fprintf(stderr, "Bad input: %s", lineptr);
+		}
+
+		if (lineptr) {
+			free(lineptr);
+			lineptr = NULL;
+			charptr = NULL;
+			linelen = 0;
 		}
 	}
 }
