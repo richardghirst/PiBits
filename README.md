@@ -105,6 +105,18 @@ Examples:
 
     echo "release 17" > /dev/pi-blaster
 
+  * To set all configured GPIO pins at once to a PWM of 20%:
+
+    echo "*=0.2" > /dev/pi-blaster
+
+  * To set several GPIO pins at once to various PWM values:
+
+    echo "13=1 17=0.2 19=0" > /dev/pi-blaster
+
+    You can also use different delimiters (comma, semicolon):
+
+    echo "13=1; 17=0.2; 19=0" > /dev/pi-blaster
+
 ### NodeJS Library
 
 NodeJS users can use [pi-blaster.js](https://github.com/sarfata/pi-blaster.js).
