@@ -550,6 +550,19 @@ release_pin(int pin)
 {
   if (is_known_pin(pin)){
 	release_pin2gpio(pin);
+	int i;
+	for (i = 0; i < num_channels; i++) {
+		if (known_pins[i] == pin)
+		{
+			int j;
+			for (j = i; j < num_channels - 1; j++) {
+				known_pins[j] = known_pins[j + 1];
+			}
+			known_pins[num_channels] = 0;
+			num_channels--;
+			break;
+		}
+	}
   }else{
 	fprintf(stderr, "GPIO %d is not enabled for pi-blaster\n", pin);
   }
@@ -578,9 +591,7 @@ set_all_pwm(float width)
 {
     int i;
     for (i = 0; i < num_channels; i++) {
-        if (is_known_pin(i)){
-            set_pwm(i, width);
-        }
+        set_pwm(known_pins[i], width);
     }
 }
 
@@ -867,35 +878,63 @@ go_go_go(void)
 	size_t linelen;
 
 	for (;;) {
+		int bad_input = 1;
 		int n, servo;
+		int charcnt = 0;
+		int argcnt = 0;
 		float value;
+		char *charptr = NULL;
 
 		if ((n = getline(&lineptr, &linelen, fp)) < 0)
 			continue;
 		dprintf("[%d]%s", n, lineptr);
-		if (!strcmp(lineptr, "debug_regs\n")) {
+
+		charptr = lineptr;
+		if (!strcmp(charptr, "debug_regs\n")) {
 			debug_dump_hw();
-		} else if (!strcmp(lineptr, "debug_samples\n")) {
+			bad_input = 0;
+		} else if (!strcmp(charptr, "debug_samples\n")) {
 			debug_dump_samples();
-		} else if (sscanf(lineptr, "release %d%c", &servo, &nl) == 2 && nl == '\n') {
+			bad_input = 0;
+		} else if (sscanf(charptr, "release %d%c", &servo, &nl) == 2 && nl == '\n') {
 			release_pwm(servo);
-		} else if (sscanf(lineptr, "*=%f%c", &value, &nl) == 2 && nl == '\n') {
+			bad_input = 0;
+		} else if (sscanf(charptr, "*=%f%c", &value, &nl) == 2 && nl == '\n') {
 			if (value < 0 || value > 1) {
 				fprintf(stderr, "Invalid value %f\n", value);
 			} else {
 				set_all_pwm(value);
 			}
-		} else if (sscanf(lineptr, "%d=%f%c", &servo, &value, &nl) == 3 && nl == '\n') {
-			if (servo < 0) {
-				fprintf(stderr, "Invalid channel number %d\n", servo);
-			} else if (value < 0 || value > 1) {
-				fprintf(stderr, "Invalid value %f\n", value);
-			} else {
-				set_pwm(servo, value);
+			bad_input = 0;
+		} else do {
+			argcnt = sscanf(charptr, "%d=%f%c%n", &servo, &value, &nl, &charcnt);
+			if (argcnt == 3)
+			{
+				if (servo < 0) {
+					fprintf(stderr, "Invalid channel number %d\n", servo);
+				} else if (value < 0 || value > 1) {
+					fprintf(stderr, "Invalid value %f\n", value);
+				} else {
+					set_pin(servo, value);
+				}
+				if (nl == '\n') {
+					update_pwm();
+				} else {
+					charptr += charcnt;
+				}
 			}
-		}
-		else {
+			bad_input = argcnt < 3;
+		} while (nl != '\n' && argcnt == 3);
+
+		if (bad_input) {
 			fprintf(stderr, "Bad input: %s", lineptr);
+		}
+
+		if (lineptr) {
+			free(lineptr);
+			lineptr = NULL;
+			charptr = NULL;
+			linelen = 0;
 		}
 	}
 }
