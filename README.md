@@ -69,6 +69,22 @@ And to uninstall, simply run:
 This will stop pi-blaster and prevent it from starting automatically on the next
 reboot.
 
+### Install with docker
+
+If you have docker on your RPi, you can run this image
+
+```bash
+docker run -it --privileged --rm -v /dev:/dev sarfata/pi-blaster
+```
+
+Or build from source in git repo
+
+```bash
+docker build -t pib .
+
+docker run -it --privileged --rm -v /dev:/dev pib
+```
+
 ## How to use
 
 pi-blaster creates a special file (FIFO) in `/dev/pi-blaster`. Any application
