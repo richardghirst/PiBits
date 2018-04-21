@@ -8,6 +8,7 @@ stable pulses.
 Pi-blaster project is based on the excellent work of Richard Hirst for
 [ServoBlaster](https://github.com/richardghirst/PiBits).
 
+Pi-blaster has also been forked and made to work with MQTT instead of a local device file.  That project is available [here](https://github.com/gherlein/pi-blaster-mqtt).
 
 ## How to install
 
