@@ -3,7 +3,7 @@
 all:	servod
 
 servod:	servod.c mailbox.c
-	gcc -Wall -g -O2 -o servod servod.c mailbox.c -lm
+	gcc -Wall -g -O2 -L/opt/vc/lib -I/opt/vc/include -o servod servod.c mailbox.c -lm -lbcm_host
 
 install: servod
 	[ "`id -u`" = "0" ] || { echo "Must be run as root"; exit 1; }

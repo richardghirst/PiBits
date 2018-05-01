@@ -41,6 +41,7 @@
 #include <sys/mman.h>
 #include <getopt.h>
 #include <math.h>
+#include <bcm_host.h>
 
 #include "mailbox.h"
 
@@ -957,13 +958,12 @@ get_model_and_revision(void)
 
 	if (strstr(modelstr, "BCM2708"))
 		board_model = 1;
-	else if (strstr(modelstr, "BCM2709"))
+	else if (strstr(modelstr, "BCM2709") || strstr(modelstr, "BCM2835"))
 		board_model = 2;
-	else if (strstr(modelstr, "BCM2835"))	/* Quick hack for Pi-Zero */
-		board_model = 1;
 	else
 		fatal("servod: Cannot parse the hardware name string\n");
 
+	/* Revisions documented at http://elinux.org/RPi_HardwareHistory */
 	ptr = revstr + strlen(revstr) - 3;
 	board_revision = strtol(ptr, &end, 16);
 	if (end != ptr + 2)
@@ -977,16 +977,27 @@ get_model_and_revision(void)
 	else
 		gpio_cfg = 3;
 
+	periph_virt_base = bcm_host_get_peripheral_address();
+	dram_phys_base = bcm_host_get_sdram_address();
+	periph_phys_base = 0x7e000000;
+	/*
+	 * See https://github.com/raspberrypi/firmware/wiki/Mailbox-property-interface
+	 *
+	 * 1:  MEM_FLAG_DISCARDABLE = 1 << 0	// can be resized to 0 at any time. Use for cached data
+	 *     MEM_FLAG_NORMAL = 0 << 2		// normal allocating alias. Don't use from ARM
+	 * 4:  MEM_FLAG_DIRECT = 1 << 2		// 0xC alias uncached
+	 * 8:  MEM_FLAG_COHERENT = 2 << 2	// 0x8 alias. Non-allocating in L2 but coherent
+	 *     MEM_FLAG_L1_NONALLOCATING =	// Allocating in L2
+	 *       (MEM_FLAG_DIRECT | MEM_FLAG_COHERENT)
+	 * 16: MEM_FLAG_ZERO = 1 << 4		// initialise buffer to all zeros
+	 * 32: MEM_FLAG_NO_INIT = 1 << 5	// don't initialise (default is initialise to all ones
+	 * 64: MEM_FLAG_HINT_PERMALOCK = 1 << 6	// Likely to be locked for long periods of time
+	 *
+	 */
 	if (board_model == 1) {
-		periph_virt_base = 0x20000000;
-		periph_phys_base = 0x7e000000;
-		dram_phys_base   = 0x40000000;
-		mem_flag         = 0x0c;
+		mem_flag         = 0x0c;	/* MEM_FLAG_DIRECT | MEM_FLAG_COHERENT */
 	} else {
-		periph_virt_base = 0x3f000000;
-		periph_phys_base = 0x7e000000;
-		dram_phys_base   = 0xc0000000;
-		mem_flag         = 0x04;
+		mem_flag         = 0x04;	/* MEM_FLAG_DIRECT */
 	}
 }
 
@@ -1266,6 +1277,8 @@ main(int argc, char **argv)
 	get_model_and_revision();
 	if (board_model == 1 && gpio_cfg == 1 && p5pins[0])
 		fatal("Board model 1 revision 1 does not have a P5 header\n");
+	if (board_model == 2 && p5pins[0])
+		fatal("Board models 2 and later do not have a P5 header\n");
 
 	parse_pin_lists(p1first, p1pins, p5pins);
 
