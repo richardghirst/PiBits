@@ -220,6 +220,7 @@ V revision (0-15)
 #define BOARD_REVISION_TYPE_PI2_B (4 << 4)
 #define BOARD_REVISION_TYPE_ALPHA (5 << 4)
 #define BOARD_REVISION_TYPE_PI3_B (8 << 4)
+#define BOARD_REVISION_TYPE_PI3_BP (0xD << 4)
 #define BOARD_REVISION_TYPE_CM (6 << 4)
 #define BOARD_REVISION_TYPE_CM3 (10 << 4)
 #define BOARD_REVISION_REV_MASK (0xF)
@@ -382,6 +383,8 @@ get_model(unsigned mbox_board_rev)
 		if ((mbox_board_rev & BOARD_REVISION_TYPE_MASK) == BOARD_REVISION_TYPE_PI2_B) {
 			board_model = 2;
 		} else if ((mbox_board_rev & BOARD_REVISION_TYPE_MASK) == BOARD_REVISION_TYPE_PI3_B) {
+			board_model = 3;
+		} else if ((mbox_board_rev & BOARD_REVISION_TYPE_MASK) == BOARD_REVISION_TYPE_PI3_BP) {
 			board_model = 3;
 		} else if ((mbox_board_rev & BOARD_REVISION_TYPE_MASK) == BOARD_REVISION_TYPE_CM3) {
 			board_model = 3;
