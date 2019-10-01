@@ -120,10 +120,13 @@ card use.  This is expected, because the pulse generation is effectively
 handled in hardware and not influenced by interrupt latency or scheduling
 effects.
 
-The driver uses DMA channel 14, and PWM channel 1.  It makes no attempt to
-protect against other code using those peripherals.  It sets the relevant GPIO
-pins to be outputs when the driver is loaded, so please ensure that you are not
-driving those pins externally.
+The DMA channel used depends on the SOC type.  If the Pi has a BCM2711
+(Pi4B only, at present) then it uses channel 7; otherwise it uses channel 14.
+
+It uses PWM channel 1.  It makes no attempt to protect against other code using
+those peripherals.  It sets the relevant GPIO pins to be outputs when the
+driver is loaded, so please ensure that you are not driving those pins
+externally.
 
 I would of course recommend some buffering between the GPIO outputs and the
 servo controls, to protect the Pi.  That said, I'm living dangerously and doing

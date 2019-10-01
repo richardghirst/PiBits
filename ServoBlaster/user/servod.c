@@ -70,6 +70,7 @@
 #define DMA_CHAN_MIN		0
 #define DMA_CHAN_MAX		14
 #define DMA_CHAN_DEFAULT	14
+#define DMA_CHAN_PI4		7
 
 #define DMA_BASE_OFFSET		0x00007000
 #define DMA_LEN			DMA_CHAN_SIZE * (DMA_CHAN_MAX+1)
@@ -143,6 +144,9 @@
 
 #define PCMCLK_CNTL		38
 #define PCMCLK_DIV		39
+
+#define PLLDFREQ_MHZ_DEFAULT	500
+#define PLLDFREQ_MHZ_PI4	750
 
 #define DELAY_VIA_PWM		0
 #define DELAY_VIA_PCM		1
@@ -290,6 +294,13 @@ static uint8_t bplus_p1pin2gpio_map[] = {
 	21,	// P1-40  GPIO 21
 };
 
+// bcm_host_get_model_type() return values to name mapping
+static const char *model_names[] = {
+	"A", "B", "A+", "B+", "2B", "Alpha", "CM", "CM2", "3B", "Zero", "CM3",
+	"Custom", "ZeroW", "3B+", "3A+", "FPGA", "CM3+", "4B"
+};
+#define NUM_MODELS	(sizeof(model_names)/sizeof(*model_names))
+
 // cycle_time_us is the pulse cycle time per servo, in microseconds.
 // Typically it should be 20ms, or 20000us.
 
@@ -320,6 +331,7 @@ static int delay_hw = DELAY_VIA_PWM;
 
 static struct timeval *servo_kill_time;
 
+static uint32_t plldfreq_mhz;
 static int dma_chan;
 static int idle_timeout;
 static int invert = 0;
@@ -687,9 +699,9 @@ init_hardware(void)
 		// Initialise PWM
 		pwm_reg[PWM_CTL] = 0;
 		udelay(10);
-		clk_reg[PWMCLK_CNTL] = 0x5A000006;		// Source=PLLD (500MHz)
+		clk_reg[PWMCLK_CNTL] = 0x5A000006;		// Source=PLLD (500MHz or 750MHz on Pi4)
 		udelay(100);
-		clk_reg[PWMCLK_DIV] = 0x5A000000 | (500<<12);	// set pwm div to 500, giving 1MHz
+		clk_reg[PWMCLK_DIV] = 0x5A000000 | (plldfreq_mhz<<12);	// set pwm div to give 1MHz
 		udelay(100);
 		clk_reg[PWMCLK_CNTL] = 0x5A000016;		// Source=PLLD and enable
 		udelay(100);
@@ -705,9 +717,9 @@ init_hardware(void)
 		// Initialise PCM
 		pcm_reg[PCM_CS_A] = 1;				// Disable Rx+Tx, Enable PCM block
 		udelay(100);
-		clk_reg[PCMCLK_CNTL] = 0x5A000006;		// Source=PLLD (500MHz)
+		clk_reg[PCMCLK_CNTL] = 0x5A000006;		// Source=PLLD (500MHz or 750MHz on Pi4)
 		udelay(100);
-		clk_reg[PCMCLK_DIV] = 0x5A000000 | (500<<12);	// Set pcm div to 500, giving 1MHz
+		clk_reg[PCMCLK_DIV] = 0x5A000000 | (plldfreq_mhz<<12);	// Set pcm div to give 1MHz
 		udelay(100);
 		clk_reg[PCMCLK_CNTL] = 0x5A000016;		// Source=PLLD and enable
 		udelay(100);
@@ -927,6 +939,8 @@ go_go_go(void)
  * digits of the Revision string and treat '00' and '01' as errors, '02' and
  * '03' as rev 1, and any other hex value as rev 2.  'Pi1 and Pi2 are
  * differentiated by the Hardware being BCM2708 or BCM2709.
+ *
+ * NOTE: These days we should just use bcm_host_get_model_type().
  */
 static void
 get_model_and_revision(void)
@@ -977,9 +991,18 @@ get_model_and_revision(void)
 	else
 		gpio_cfg = 3;
 
+	if (bcm_host_is_model_pi4()) {
+		plldfreq_mhz = PLLDFREQ_MHZ_PI4;
+		dma_chan = DMA_CHAN_PI4;
+	} else {
+		plldfreq_mhz = PLLDFREQ_MHZ_DEFAULT;
+		dma_chan = DMA_CHAN_DEFAULT;
+	}
+
 	periph_virt_base = bcm_host_get_peripheral_address();
 	dram_phys_base = bcm_host_get_sdram_address();
 	periph_phys_base = 0x7e000000;
+
 	/*
 	 * See https://github.com/raspberrypi/firmware/wiki/Mailbox-property-interface
 	 *
@@ -1287,8 +1310,6 @@ main(int argc, char **argv)
 		if (*dma_chan_arg < '0' || *dma_chan_arg > '9' ||
 				*p || dma_chan < DMA_CHAN_MIN || dma_chan > DMA_CHAN_MAX)
 			fatal("Invalid dma-chan specified\n");
-	} else {
-		dma_chan = DMA_CHAN_DEFAULT;
 	}
 
 	if (idle_timeout_arg) {
@@ -1358,7 +1379,15 @@ main(int argc, char **argv)
 		fatal("min value is >= max value\n");
 	}
 
-	printf("\nBoard model:               %7d\n", board_model);
+	{
+		int bcm_model = bcm_host_get_model_type();
+
+		if (bcm_model < NUM_MODELS)
+			printf("\nBoard model:               %7s\n", model_names[bcm_model]);
+		else
+			printf("\nBoard model:               Unknown\n");
+	}
+
 	printf("GPIO configuration:            %s\n", gpio_desc[gpio_cfg]);
 	printf("Using hardware:                %s\n", delay_hw == DELAY_VIA_PWM ? "PWM" : "PCM");
 	printf("Using DMA channel:         %7d\n", dma_chan);
