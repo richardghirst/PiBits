@@ -344,7 +344,7 @@ static uint32_t *turnoff_mask;
 static uint32_t *turnon_mask;
 static dma_cb_t *cb_base;
 
-static int board_model;
+static int board_is_model_1;
 static int gpio_cfg;
 
 static uint32_t periph_phys_base;
@@ -934,23 +934,18 @@ go_go_go(void)
 	}
 }
 
-/* Determining the board revision is a lot more complicated than it should be
- * (see comments in wiringPi for details).  We will just look at the last two
- * digits of the Revision string and treat '00' and '01' as errors, '02' and
- * '03' as rev 1, and any other hex value as rev 2.  'Pi1 and Pi2 are
- * differentiated by the Hardware being BCM2708 or BCM2709.
- *
- * NOTE: These days we should just use bcm_host_get_model_type().
+/* Extract board revision from /proc/cpuinfo, and from that determine the
+ * mem_flag to use, and what the GPIO config is (26 pins, 40 pins, whether
+ * there is a separate P5 GPIO header).  Query the bcm library for SDRAM
+ * and peripheral base addresses.
  */
 static void
 get_model_and_revision(void)
 {
-	char buf[128], revstr[128], modelstr[128];
-	char *ptr, *end, *res;
-	int board_revision;
+	char buf[128];
+	char term, *res;
+	unsigned int rev = 0;
 	FILE *fp;
-
-	revstr[0] = modelstr[0] = '\0';
 
 	fp = fopen("/proc/cpuinfo", "r");
 
@@ -958,53 +953,22 @@ get_model_and_revision(void)
 		fatal("Unable to open /proc/cpuinfo: %m\n");
 
 	while ((res = fgets(buf, 128, fp))) {
-		if (!strncasecmp("hardware", buf, 8))
-			memcpy(modelstr, buf, 128);
-		else if (!strncasecmp(buf, "revision", 8))
-			memcpy(revstr, buf, 128);
+		if (!strncasecmp("revision\t:", buf, 10)) {
+			if (sscanf(buf+10, "%x%c", &rev, &term) != 2 || term != '\n')
+				fatal("Unable to parse revision string %s", buf);
+			break;
+		}
 	}
 	fclose(fp);
 
-	if (modelstr[0] == '\0')
-		fatal("servod: No 'Hardware' record in /proc/cpuinfo\n");
-	if (revstr[0] == '\0')
+	if (res == NULL)
 		fatal("servod: No 'Revision' record in /proc/cpuinfo\n");
 
-	if (strstr(modelstr, "BCM2708"))
-		board_model = 1;
-	else if (strstr(modelstr, "BCM2709") || strstr(modelstr, "BCM2835"))
-		board_model = 2;
-	else
-		fatal("servod: Cannot parse the hardware name string\n");
-
-	/* Revisions documented at http://elinux.org/RPi_HardwareHistory */
-	ptr = revstr + strlen(revstr) - 3;
-	board_revision = strtol(ptr, &end, 16);
-	if (end != ptr + 2)
-		fatal("servod: Failed to parse Revision string\n");
-	if (board_revision < 1)
-		fatal("servod: Invalid board Revision\n");
-	else if (board_revision < 4)
-		gpio_cfg = 1;
-	else if (board_revision < 16)
-		gpio_cfg = 2;
-	else
-		gpio_cfg = 3;
-
-	if (bcm_host_is_model_pi4()) {
-		plldfreq_mhz = PLLDFREQ_MHZ_PI4;
-		dma_chan = DMA_CHAN_PI4;
-	} else {
-		plldfreq_mhz = PLLDFREQ_MHZ_DEFAULT;
-		dma_chan = DMA_CHAN_DEFAULT;
-	}
-
-	periph_virt_base = bcm_host_get_peripheral_address();
-	dram_phys_base = bcm_host_get_sdram_address();
-	periph_phys_base = 0x7e000000;
+	/* Board revisions documented at http://elinux.org/RPi_HardwareHistory */
 
 	/*
 	 * See https://github.com/raspberrypi/firmware/wiki/Mailbox-property-interface
+	 * for mem_flag values:
 	 *
 	 * 1:  MEM_FLAG_DISCARDABLE = 1 << 0	// can be resized to 0 at any time. Use for cached data
 	 *     MEM_FLAG_NORMAL = 0 << 2		// normal allocating alias. Don't use from ARM
@@ -1017,11 +981,40 @@ get_model_and_revision(void)
 	 * 64: MEM_FLAG_HINT_PERMALOCK = 1 << 6	// Likely to be locked for long periods of time
 	 *
 	 */
-	if (board_model == 1) {
-		mem_flag         = 0x0c;	/* MEM_FLAG_DIRECT | MEM_FLAG_COHERENT */
-	} else {
-		mem_flag         = 0x04;	/* MEM_FLAG_DIRECT */
+	if ((rev & 0x800000) == 0) {
+		/* Old style revision code */
+		board_is_model_1 = 1;
+		if (rev < 2 || rev > 0x15)
+			fatal("Invalid revision code %04x", rev);
+		if (rev < 4)
+			gpio_cfg = 1;	/* One 26 pin header */
+		else
+			gpio_cfg = 2;	/* One 26 pin, one 8 pin */
+		mem_flag = 0x0c;	/* MEM_FLAG_DIRECT | MEM_FLAG_COHERENT */
 	}
+	else {
+		/* New revision code */
+		gpio_cfg = 3;		/* One 40 pin header */
+
+		/* mem_flag is determined from CPU type */
+		if (((rev >> 12) & 0x0f) == 0)
+			mem_flag = 0x0c;	/* MEM_FLAG_DIRECT | MEM_FLAG_COHERENT */
+		else
+			mem_flag = 0x04;	/* MEM_FLAG_DIRECT */
+	}
+
+
+	if (bcm_host_is_model_pi4()) {
+		plldfreq_mhz = PLLDFREQ_MHZ_PI4;
+		dma_chan = DMA_CHAN_PI4;
+	} else {
+		plldfreq_mhz = PLLDFREQ_MHZ_DEFAULT;
+		dma_chan = DMA_CHAN_DEFAULT;
+	}
+
+	periph_virt_base = bcm_host_get_peripheral_address();
+	dram_phys_base = bcm_host_get_sdram_address();
+	periph_phys_base = 0x7e000000;
 }
 
 static void
@@ -1040,10 +1033,10 @@ parse_pin_lists(int p1first, char *p1pins, char*p5pins)
 		if (lst == 0 && p1first) {
 			name = "P1";
 			pins = p1pins;
-			if (board_model == 1 && gpio_cfg == 1) {
+			if (board_is_model_1 && gpio_cfg == 1) {
 				map = rev1_p1pin2gpio_map;
 				mapcnt = sizeof(rev1_p1pin2gpio_map);
-			} else if (board_model == 1 && gpio_cfg == 2) {
+			} else if (board_is_model_1 && gpio_cfg == 2) {
 				map = rev2_p1pin2gpio_map;
 				mapcnt = sizeof(rev2_p1pin2gpio_map);
 			} else {
@@ -1054,10 +1047,10 @@ parse_pin_lists(int p1first, char *p1pins, char*p5pins)
 		} else {
 			name = "P5";
 			pins = p5pins;
-			if (board_model == 1 && gpio_cfg == 1) {
+			if (board_is_model_1 && gpio_cfg == 1) {
 				map = rev1_p5pin2gpio_map;
 				mapcnt = sizeof(rev1_p5pin2gpio_map);
-			} else if (board_model == 1 && gpio_cfg == 2) {
+			} else if (board_is_model_1 && gpio_cfg == 2) {
 				map = rev2_p5pin2gpio_map;
 				mapcnt = sizeof(rev2_p5pin2gpio_map);
 			} else {
@@ -1123,14 +1116,14 @@ gpio2pinname(uint8_t gpio)
 	static char res[16];
 	uint8_t pin;
 
-	if (board_model == 1 && gpio_cfg == 1) {
+	if (board_is_model_1 && gpio_cfg == 1) {
 		if ((pin = gpiosearch(gpio, rev1_p1pin2gpio_map, sizeof(rev1_p1pin2gpio_map))))
 			sprintf(res, "P1-%d", pin);
 		else if ((pin = gpiosearch(gpio, rev1_p5pin2gpio_map, sizeof(rev1_p5pin2gpio_map))))
 			sprintf(res, "P5-%d", pin);
 		else
 			fatal("Cannot map GPIO %d to a header pin\n", gpio);
-	} else if (board_model == 1 && gpio_cfg == 2) {
+	} else if (board_is_model_1 && gpio_cfg == 2) {
 		if ((pin = gpiosearch(gpio, rev2_p1pin2gpio_map, sizeof(rev2_p1pin2gpio_map))))
 			sprintf(res, "P1-%d", pin);
 		else if ((pin = gpiosearch(gpio, rev2_p5pin2gpio_map, sizeof(rev2_p5pin2gpio_map))))
@@ -1298,9 +1291,9 @@ main(int argc, char **argv)
 		}
 	}
 	get_model_and_revision();
-	if (board_model == 1 && gpio_cfg == 1 && p5pins[0])
+	if (board_is_model_1 && gpio_cfg == 1 && p5pins[0])
 		fatal("Board model 1 revision 1 does not have a P5 header\n");
-	if (board_model == 2 && p5pins[0])
+	if (!board_is_model_1 && p5pins[0])
 		fatal("Board models 2 and later do not have a P5 header\n");
 
 	parse_pin_lists(p1first, p1pins, p5pins);
@@ -1383,9 +1376,10 @@ main(int argc, char **argv)
 		int bcm_model = bcm_host_get_model_type();
 
 		if (bcm_model < NUM_MODELS)
-			printf("\nBoard model:               %7s\n", model_names[bcm_model]);
+			printf("\nBoard model:               %7s", model_names[bcm_model]);
 		else
-			printf("\nBoard model:               Unknown\n");
+			printf("\nBoard model:               Unknown");
+		printf(" (mem_flag 0x%02x)\n", mem_flag);
 	}
 
 	printf("GPIO configuration:            %s\n", gpio_desc[gpio_cfg]);
@@ -1404,7 +1398,7 @@ main(int argc, char **argv)
 						servo_max_ticks * step_time_us);
 	printf("Output levels:            %s\n", invert ? "Inverted" : "  Normal");
 	printf("\nUsing P1 pins:               %s\n", p1pins);
-	if (board_model == 1 && gpio_cfg == 2)
+	if (board_is_model_1 && gpio_cfg == 2)
 		printf("Using P5 pins:               %s\n", p5pins);
 	printf("\nServo mapping:\n");
 	for (i = 0; i < MAX_SERVOS; i++) {
