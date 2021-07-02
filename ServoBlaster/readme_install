@@ -1,0 +1,27 @@
+from https://github.com/BioMachinesLab/drones/wiki/Installing-Servoblaster
+
+1 - The Servoblaster script to download and install depends on the hardware version that you use. Please follow the instructions that better fit yours:
+
+Configurations for Rapsberry Pi A/A+/B/B+
+
+In order to install servoblaster, you need to run first clone the project from github and compile the packages:
+
+mkdir -p ~/scripts/c && cd ~/scripts/c
+git clone https://github.com/richardghirst/PiBits
+mv PiBits/ServoBlaster/ . && rm -rf PiBits
+cd ServoBlaster/user
+Configurations for Raspberry Pi 2
+
+In order to install Servoblaster on Raspberry Pi 2, download this version of the servoblaster provided by Richard G. Hirst in here. You can do it directly on raspberry by running the following commands:
+
+cd ~/scripts/c
+wget -O ServoBlaster-20150219.tgz https://www.raspberrypi.org/forums/download/file.php?id=9292
+tar -zxvf ServoBlaster-20150219.tgz
+rm ServoBlaster-20150219.tgz
+2 - Inside ~/scripts/c/ServoBlaster/user folder (or ~/scripts/c/ServoBlaster folder, in case you have a Raspberry Pi 2), comment the line regarding OPTS (OPTS="--idle-timeout=2000") on file init-script, in order to remove the timeout function. Finally, run the following:
+
+sudo make install
+3 - To initiate the system with servoblaster out value in ESC's central position, add the following to /etc/rc.local (right before exit 0):
+
+echo 1=150 > /dev/servoblaster
+echo 2=150 > /dev/servoblaster
