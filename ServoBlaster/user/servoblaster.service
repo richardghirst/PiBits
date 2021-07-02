@@ -1,0 +1,9 @@
+[Unit]
+Description=Servoblaster
+
+[Service]
+Type=forking
+ExecStart=/usr/local/sbin/servod --idle-timeout=2000
+
+[Install]
+WantedBy=multi-user.target
